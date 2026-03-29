@@ -1,0 +1,145 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id               String    @id @default(cuid())
+  name             String?
+  email            String?   @unique
+  emailVerified    DateTime?
+  image            String?
+  discordId        String?   @unique
+  discordName      String?
+  isArtTeam        Boolean   @default(false)
+  // "head" | "senior" | "primary" | "reserve" | null
+  artTeamTier      String?
+  isBlacklisted    Boolean   @default(false)
+  blacklistReason  String?
+  // Cached Discord role IDs as JSON array string
+  discordRoles     String    @default("[]")
+  // Cached KMC role IDs as JSON array string
+  kmcRoles         String    @default("[]")
+  // Granted clearance names as JSON array string e.g. ["sf"]
+  clearances       String    @default("[]")
+  accounts         Account[]
+  sessions         Session[]
+  requests         Request[]
+  assignedRequests Request[] @relation("AssignedArtist")
+  directHelmets    Request[] @relation("DirectAdd")
+  createdAt        DateTime  @default(now())
+}
+
+model Request {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  helmetType        String
+  decals            String   @default("[]")
+  designs           String   @default("[]")
+  visorColour       String?
+  attachments       String   @default("[]")
+  battleDamage      Boolean  @default(false)
+  custom            Boolean  @default(false)
+  customDetails     String?
+  evidenceUrl       String?
+  evidenceNote      String?
+  status            String   @default("PENDING")
+  // direct = true means added by art team without a user request
+  direct            Boolean  @default(false)
+  artistId          String?
+  artist            User?    @relation("AssignedArtist", fields: [artistId], references: [id])
+  addedById         String?
+  addedBy           User?    @relation("DirectAdd", fields: [addedById], references: [id])
+  completedImageUrl String?
+  internalNotes     String?
+  requestedArtistId String?
+  declineReason     String?
+  completedAt       DateTime?  // when status was set to COMPLETED
+  cooldownType      String?    // "custom" | "decaled" — snapshot at completion time
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userId, status, direct])
+  @@index([artistId, status])
+  @@index([status])
+}
+
+model ConfigItem {
+  id              String   @id @default(cuid())
+  category        String
+  subCategory     String?
+  helmetCategory  String?
+  name            String
+  label           String
+  requirement     String?
+  rankReq         String?
+  note            String?
+  active          Boolean  @default(true)
+  standard        Boolean  @default(true)  // standard vs non-standard (for helmetType items only)
+  sortOrder       Int      @default(0)
+  allowedRoleIds  String   @default("[]")
+  createdAt       DateTime @default(now())
+  @@unique([category, name])
+}
+
+model HelmetCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  sortOrder Int      @default(0)
+  clearance String?  // clearance name required to access this category e.g. "sf"
+  createdAt DateTime @default(now())
+}
+
+model ArtTeamClearance {
+  id             String   @id @default(cuid())
+  name           String   @unique  // e.g. "sf"
+  label          String            // e.g. "Special Forces"
+  description    String?
+  memberIds      String   @default("[]")  // JSON array of User IDs
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model RateLimit {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  createdAt DateTime @default(now())
+  @@index([userId, action, createdAt])
+}
