@@ -37,5 +37,5 @@ next-env.d.ts
 
 .idea
 .claude
-./prisma/dev.db
-./prisma/dev.db.*
+/prisma/dev.db*
+
