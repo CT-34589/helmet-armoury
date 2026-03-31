@@ -130,7 +130,7 @@ export function ArtTeamManager({ members: initial, allUsers }: { members: Member
             <TableRow>
               <TableHead>Member</TableHead>
               <TableHead>Tier</TableHead>
-              <TableHead>Active</TableHead>
+              {/*<TableHead>Active</TableHead>*/}
               <TableHead>Joined</TableHead>
               <TableHead className="w-10" />
             </TableRow>
@@ -163,11 +163,11 @@ export function ArtTeamManager({ members: initial, allUsers }: { members: Member
                       </SelectContent>
                     </Select>
                   </TableCell>
-                  <TableCell>
-                    {m.activeRequests > 0
-                      ? <Badge variant="secondary">{m.activeRequests}</Badge>
-                      : <span className="text-sm text-muted-foreground">—</span>}
-                  </TableCell>
+                  {/*<TableCell>*/}
+                  {/*  {m.activeRequests > 0*/}
+                  {/*    ? <Badge variant="secondary">{m.activeRequests}</Badge>*/}
+                  {/*    : <span className="text-sm text-muted-foreground">—</span>}*/}
+                  {/*</TableCell>*/}
                   <TableCell className="text-sm text-muted-foreground">{formatDate(m.createdAt)}</TableCell>
                   <TableCell>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"

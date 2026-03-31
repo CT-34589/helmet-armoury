@@ -3,7 +3,35 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { checkRateLimit, recordRateLimit } from "@/lib/rate-limit"
 import { checkUserCooldown } from "@/lib/cooldown"
+import { getItemLabelMap, resolveLabels } from "@/lib/label-lookup"
 import { z } from "zod"
+
+export async function GET() {
+  const session = await auth()
+  if (!session?.user?.isArtTeam) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+
+  const [requests, labelMap] = await Promise.all([
+    prisma.request.findMany({
+      where: { status: { in: ["PENDING", "ACCEPTED", "IN_PROGRESS"] } },
+      include: {
+        user: { select: { id: true, name: true, image: true } },
+        artist: { select: { id: true, name: true, image: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    }),
+    getItemLabelMap(),
+  ])
+
+  return NextResponse.json(requests.map((r) => ({
+    ...r,
+    decals: resolveLabels(JSON.parse(r.decals) as string[], labelMap),
+    designs: resolveLabels(JSON.parse(r.designs) as string[], labelMap),
+    visorColour: r.visorColour ? (labelMap[r.visorColour] ?? r.visorColour) : null,
+    attachments: resolveLabels(JSON.parse(r.attachments ?? "[]") as string[], labelMap),
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+  })))
+}
 
 const schema = z.object({
   helmetType: z.string().min(1).max(100),

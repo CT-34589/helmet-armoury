@@ -6,7 +6,6 @@ interface SidebarContextValue {
   setOpen: (v: boolean) => void
   collapsed: boolean
   setCollapsed: (v: boolean) => void
-  isMobile: boolean
 }
 
 const SidebarContext = createContext<SidebarContextValue>({
@@ -14,23 +13,12 @@ const SidebarContext = createContext<SidebarContextValue>({
   setOpen: () => {},
   collapsed: false,
   setCollapsed: () => {},
-  isMobile: false,
 })
 
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false)         // mobile sheet open
-  const [collapsed, setCollapsed] = useState(false) // desktop collapsed
-  const [isMobile, setIsMobile] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
 
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 768px)")
-    const handler = (e: MediaQueryListEvent | MediaQueryList) => setIsMobile(e.matches)
-    handler(mq)
-    mq.addEventListener("change", handler)
-    return () => mq.removeEventListener("change", handler)
-  }, [])
-
-  // Persist desktop collapsed state
   useEffect(() => {
     const saved = localStorage.getItem("sidebar-collapsed")
     if (saved !== null) setCollapsed(saved === "true")
@@ -42,7 +30,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <SidebarContext.Provider value={{ open, setOpen, collapsed, setCollapsed: handleSetCollapsed, isMobile }}>
+    <SidebarContext.Provider value={{ open, setOpen, collapsed, setCollapsed: handleSetCollapsed }}>
       {children}
     </SidebarContext.Provider>
   )

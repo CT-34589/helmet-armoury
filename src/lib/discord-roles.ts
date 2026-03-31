@@ -35,7 +35,8 @@ export async function fetchGuildRoles(
 }
 
 export async function checkDiscordRoles(
-  accessToken: string
+  accessToken: string,
+  settings: Record<string, string> = {}
 ): Promise<RoleCheckResult> {
   const mainGuildId = process.env.DISCORD_GUILD_ID ?? ""
   const kmcGuildId = process.env.KMC_GUILD_ID ?? ""
@@ -73,8 +74,16 @@ export async function checkDiscordRoles(
     customHelmetRoleIds.some((id) => discordRoles.includes(id))
 
   // Active member check — must have a company role OR a staff role
-  const companyRoleIds = envList("DISCORD_COMPANY_ROLE_IDS")
-  const staffRoleIds = envList("DISCORD_STAFF_ROLE_IDS")
+  // SystemSettings override env vars when present
+  function settingOrEnv(settingKey: string, envKey: string): string[] {
+    const fromSettings = settings[settingKey]
+    if (fromSettings !== undefined) {
+      return fromSettings.split(",").map((s) => s.trim()).filter(Boolean)
+    }
+    return envList(envKey)
+  }
+  const companyRoleIds = settingOrEnv("active_member_role_ids", "DISCORD_COMPANY_ROLE_IDS")
+  const staffRoleIds = settingOrEnv("active_staff_role_ids", "DISCORD_STAFF_ROLE_IDS")
   const isActiveMember =
     companyRoleIds.length === 0 || // if not configured, allow everyone
     companyRoleIds.some((id) => discordRoles.includes(id)) ||

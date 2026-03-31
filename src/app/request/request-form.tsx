@@ -17,14 +17,17 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 interface HelmetOption { name: string; label: string; helmetCategory?: string | null }
 interface VisorOption { name: string; label: string; requirement?: string }
 interface ArtistOption { id: string; name: string | null; image: string | null }
+interface WeightedOption extends ComboboxOption { slotWeight?: number }
 interface Props {
   helmetTypes: HelmetOption[]
-  decals: ComboboxOption[]
-  designs: ComboboxOption[]
+  decals: WeightedOption[]
+  designs: WeightedOption[]
   visorColours: VisorOption[]
   attachments: ComboboxOption[]
   artTeamMembers: ArtistOption[]
   hasCustomHelmetAccess: boolean
+  decalSlotLimit: number  // 0 = unlimited
+  designSlotLimit: number // 0 = unlimited
 }
 
 type Step = "idle" | "validating" | "uploading-evidence" | "submitting" | "done" | "error"
@@ -40,7 +43,7 @@ const STEP_LABELS: Record<Step, string> = {
 
 const STEP_ORDER: Step[] = ["validating", "uploading-evidence", "submitting", "done"]
 
-export function RequestForm({ helmetTypes, decals, designs, visorColours, attachments, artTeamMembers, hasCustomHelmetAccess }: Props) {
+export function RequestForm({ helmetTypes, decals, designs, visorColours, attachments, artTeamMembers, hasCustomHelmetAccess, decalSlotLimit, designSlotLimit }: Props) {
   const router = useRouter()
   const evidenceInputRef = useRef<HTMLInputElement>(null)
   const [step, setStep] = useState<Step>("idle")
@@ -75,6 +78,25 @@ export function RequestForm({ helmetTypes, decals, designs, visorColours, attach
   const selectedArtist = artTeamMembers.find((a) => a.id === requestedArtistId)
   const isSubmitting = step !== "idle" && step !== "error"
   const stepIdx = STEP_ORDER.indexOf(step)
+
+  const usedDecalSlots = selectedDecals.reduce((sum, v) => sum + (decals.find((d) => d.value === v)?.slotWeight ?? 1), 0)
+  const usedDesignSlots = selectedDesigns.reduce((sum, v) => sum + (designs.find((d) => d.value === v)?.slotWeight ?? 1), 0)
+
+  const handleDecalChange = (next: string[]) => {
+    if (decalSlotLimit > 0) {
+      const total = next.reduce((sum, v) => sum + (decals.find((d) => d.value === v)?.slotWeight ?? 1), 0)
+      if (total > decalSlotLimit) { toast.error(`Only ${decalSlotLimit} decal slot${decalSlotLimit !== 1 ? "s" : ""} available`); return }
+    }
+    setSelectedDecals(next)
+  }
+
+  const handleDesignChange = (next: string[]) => {
+    if (designSlotLimit > 0) {
+      const total = next.reduce((sum, v) => sum + (designs.find((d) => d.value === v)?.slotWeight ?? 1), 0)
+      if (total > designSlotLimit) { toast.error(`Only ${designSlotLimit} design slot${designSlotLimit !== 1 ? "s" : ""} available`); return }
+    }
+    setSelectedDesigns(next)
+  }
 
   const handleEvidenceFile = (f: File) => {
     if (!f.type.startsWith("image/")) { toast.error("Evidence must be an image file"); return }
@@ -194,9 +216,16 @@ export function RequestForm({ helmetTypes, decals, designs, visorColours, attach
 
       {/* Decals */}
       <div className="space-y-2">
-        <Label>Decals</Label>
+        <div className="flex items-baseline justify-between">
+          <Label>Decals</Label>
+          {decalSlotLimit > 0 && (
+            <span className={cn("text-xs", usedDecalSlots > decalSlotLimit ? "text-destructive" : "text-muted-foreground")}>
+              {usedDecalSlots} / {decalSlotLimit} slots
+            </span>
+          )}
+        </div>
         <p className="text-xs text-muted-foreground">Select all you are eligible for. Requirements shown in the dropdown.</p>
-        <MultiCombobox options={decals} value={selectedDecals} onChange={setSelectedDecals}
+        <MultiCombobox options={decals} value={selectedDecals} onChange={handleDecalChange}
           placeholder="Search and select decals…" searchPlaceholder="Search decals…" />
       </div>
 
@@ -204,8 +233,15 @@ export function RequestForm({ helmetTypes, decals, designs, visorColours, attach
 
       {/* Designs */}
       <div className="space-y-2">
-        <Label>Designs</Label>
-        <MultiCombobox options={designs} value={selectedDesigns} onChange={setSelectedDesigns}
+        <div className="flex items-baseline justify-between">
+          <Label>Designs</Label>
+          {designSlotLimit > 0 && (
+            <span className={cn("text-xs", usedDesignSlots > designSlotLimit ? "text-destructive" : "text-muted-foreground")}>
+              {usedDesignSlots} / {designSlotLimit} slots
+            </span>
+          )}
+        </div>
+        <MultiCombobox options={designs} value={selectedDesigns} onChange={handleDesignChange}
           placeholder="Search and select designs…" searchPlaceholder="Search designs…" />
       </div>
 

@@ -50,6 +50,22 @@ export function OverviewBoard({ requests: initial, artists, currentUserId }: {
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
+  useEffect(() => {
+    const es = new EventSource("/api/requests/stream")
+    es.onmessage = (e) => {
+      try {
+        const updated: Request[] = JSON.parse(e.data)
+        updated.forEach((r) => {
+          if (!Array.isArray(r.decals)) r.decals = JSON.parse(r.decals as unknown as string ?? "[]")
+          if (!Array.isArray(r.designs)) r.designs = JSON.parse(r.designs as unknown as string ?? "[]")
+          if (!Array.isArray(r.attachments)) r.attachments = JSON.parse(r.attachments as unknown as string ?? "[]")
+        })
+        setRequests(updated)
+      } catch {}
+    }
+    return () => es.close()
+  }, [])
+
   const selected = requests.find((r) => r.id === selectedId) ?? null
 
   const mutate = async (id: string, body: Record<string, unknown>) => {

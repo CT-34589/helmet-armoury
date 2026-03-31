@@ -25,16 +25,36 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           where: { discordId: account.providerAccountId },
           select: { isBlacklisted: true },
         })
-        if (existing?.isBlacklisted) return false
+        if (existing?.isBlacklisted) return "/unauthorized?reason=blacklisted"
+
+        // Load SystemSettings for active-member role config
+        let settingsMap: Record<string, string> = {}
+        try {
+          const rows = await (prisma as any).systemSetting.findMany()
+          settingsMap = Object.fromEntries(rows.map((r: { key: string; value: string }) => [r.key, r.value]))
+        } catch {}
 
         // Fetch all role data from Discord in one pass
         const roleData = account.access_token
-          ? await checkDiscordRoles(account.access_token)
+          ? await checkDiscordRoles(account.access_token, settingsMap)
           : null
 
-        // Block inactive members (no company or staff role)
+        // Block inactive members unless they have existing completed helmet records
         if (roleData && !roleData.isActiveMember) {
-          return "/unauthorized?reason=inactive"
+          const existingUser = await prisma.user.findFirst({
+            where: { discordId: account.providerAccountId },
+            select: { id: true },
+          })
+          const helmetCount = existingUser
+            ? await prisma.request.count({ where: { userId: existingUser.id, status: "COMPLETED" } })
+            : 0
+          if (helmetCount === 0) return "/unauthorized?reason=inactive"
+          // Has records — allow sign-in as armoury-only
+          await prisma.user.update({
+            where: { id: user.id! },
+            data: { armouryOnly: true },
+          })
+          return true
         }
 
         // Resolve clearances — check which clearances list this user's ID as a member
@@ -61,6 +81,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             discordRoles: JSON.stringify(roleData?.discordRoles ?? []),
             kmcRoles: JSON.stringify(roleData?.kmcRoles ?? []),
             clearances: JSON.stringify(userClearances),
+            armouryOnly: false, // reset — they're an active member
           },
         })
       } catch (err) {
@@ -77,6 +98,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             isArtTeam: true,
             artTeamTier: true,
             isBlacklisted: true,
+            armouryOnly: true,
             discordId: true,
             discordRoles: true,
             kmcRoles: true,
@@ -95,6 +117,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.isArtTeam = dbUser?.isArtTeam ?? false
         session.user.artTeamTier = dbUser?.artTeamTier ?? null
         session.user.isBlacklisted = false
+        session.user.armouryOnly = dbUser?.armouryOnly ?? false
         session.user.discordId = dbUser?.discordId ?? undefined
         session.user.discordRoles = JSON.parse(dbUser?.discordRoles ?? "[]")
         session.user.kmcRoles = JSON.parse(dbUser?.kmcRoles ?? "[]")
@@ -105,6 +128,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.isArtTeam = false
         session.user.artTeamTier = null
         session.user.isBlacklisted = false
+        session.user.armouryOnly = false
         session.user.discordRoles = []
         session.user.kmcRoles = []
         session.user.clearances = []
@@ -125,6 +149,7 @@ declare module "next-auth" {
       isArtTeam: boolean
       artTeamTier: string | null
       isBlacklisted: boolean
+      armouryOnly: boolean
       discordId?: string
       discordRoles: string[]
       kmcRoles: string[]

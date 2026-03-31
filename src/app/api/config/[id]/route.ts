@@ -21,6 +21,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       ...(body.subCategory !== undefined && { subCategory: body.subCategory || null }),
       ...(body.helmetCategory !== undefined && { helmetCategory: body.helmetCategory || null }),
       ...(body.allowedRoleIds !== undefined && { allowedRoleIds: JSON.stringify(body.allowedRoleIds) }),
+      ...(body.slotWeight !== undefined && { slotWeight: Math.max(1, parseInt(body.slotWeight, 10) || 1) }),
     },
   })
   revalidateTag("config", "max")

@@ -10,6 +10,8 @@ interface Props {
 const messages: Record<string, string> = {
   inactive: "You must have an active company or staff role in the 104th to access this system.",
   blacklisted: "Your account has been blacklisted from the Helmet Armoury.",
+  vpn: "VPN and proxy connections are not permitted. Disable your VPN and try again.",
+  ratelimited: "Too many sign-in attempts from your IP address. Please wait a minute and try again.",
   default: "You don't have permission to access this page.",
 }
 

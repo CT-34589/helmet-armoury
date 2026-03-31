@@ -10,6 +10,7 @@ export default async function RequestPage() {
   const session = await auth()
   if (!session?.user) redirect("/")
   if (session.user.isBlacklisted) redirect("/armoury/me")
+  if (session.user.armouryOnly) redirect("/armoury/me")
 
   // Check for existing open request — lock if one exists
   const openRequest = await prisma.request.findFirst({
@@ -125,11 +126,11 @@ export default async function RequestPage() {
 
   const decals = visibleItems
     .filter((c) => c.category === "decal")
-    .map((d) => ({ value: d.name, label: d.label, subCategory: d.subCategory ?? undefined, requirement: d.requirement ?? undefined }))
+    .map((d) => ({ value: d.name, label: d.label, subCategory: d.subCategory ?? undefined, requirement: d.requirement ?? undefined, slotWeight: d.slotWeight ?? 1 }))
 
   const designs = visibleItems
     .filter((c) => c.category === "design")
-    .map((d) => ({ value: d.name, label: d.label, subCategory: d.subCategory ?? undefined, requirement: d.requirement ?? undefined }))
+    .map((d) => ({ value: d.name, label: d.label, subCategory: d.subCategory ?? undefined, requirement: d.requirement ?? undefined, slotWeight: d.slotWeight ?? 1 }))
 
   const visorColours = visibleItems
     .filter((c) => c.category === "visorColour")
@@ -146,6 +147,37 @@ export default async function RequestPage() {
     isSAT ||
     customHelmetRoleIds.length === 0 ||
     customHelmetRoleIds.some((id) => userRoles.includes(id))
+
+  // Load settings and compute slot limits for this user's rank
+  let settingsMap: Record<string, string> = {}
+  try {
+    const rows = await (prisma as any).systemSetting.findMany()
+    settingsMap = Object.fromEntries(rows.map((r: { key: string; value: string }) => [r.key, r.value]))
+  } catch {}
+
+  // Slot limits: only SGM+ rank gets unlimited. Cadre/Head Cadre still use their rank's slot tier.
+  const kmcRolesForSlots = session.user.kmcRoles ?? []
+  const slotIds = (key: string) =>
+    (settingsMap[key] ?? "").split(",").map((s) => s.trim()).filter(Boolean)
+
+  // SGM+ role IDs — reuse the cooldown rank config, fall back to env var
+  const sgmPlusRoleIds = slotIds("cooldown_rank_sgm_plus_role_ids").length > 0
+    ? slotIds("cooldown_rank_sgm_plus_role_ids")
+    : (process.env.KMC_SGM_PLUS_ROLE_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean)
+
+  let decalSlotLimit = 0
+  let designSlotLimit = 0
+
+  if (!sgmPlusRoleIds.some((id) => kmcRolesForSlots.includes(id))) {
+    // Not SGM+ rank → determine slot tier from rank roles (Cadre/Head Cadre fall through here too)
+    let slotTier = "ct_po"
+    if (slotIds("slot_rank_sgt_fcpt_role_ids").some((id) => kmcRolesForSlots.includes(id)))     slotTier = "sgt_fcpt"
+    else if (slotIds("slot_rank_cpl_flt_role_ids").some((id) => kmcRolesForSlots.includes(id))) slotTier = "cpl_flt"
+    else if (slotIds("slot_rank_lcpl_fo_role_ids").some((id) => kmcRolesForSlots.includes(id))) slotTier = "lcpl_fo"
+
+    decalSlotLimit  = parseInt(settingsMap[`slots_decals_${slotTier}`]  ?? "0", 10)
+    designSlotLimit = parseInt(settingsMap[`slots_designs_${slotTier}`] ?? "0", 10)
+  }
 
   return (
     <div className="max-w-2xl animate-fade-in">
@@ -165,6 +197,8 @@ export default async function RequestPage() {
             attachments={attachments}
             artTeamMembers={artTeamMembers}
             hasCustomHelmetAccess={!!hasCustomHelmetAccess}
+            decalSlotLimit={decalSlotLimit}
+            designSlotLimit={designSlotLimit}
           />
         </CardContent>
       </Card>

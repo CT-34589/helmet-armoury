@@ -4,12 +4,12 @@ import { prisma } from "@/lib/prisma"
 import { getItemLabelMap, resolveLabels } from "@/lib/label-lookup"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { StatusBadge, StatusTracker } from "@/components/status-tracker"
-import { formatDate } from "@/lib/utils"
-import type { RequestStatus } from "@/lib/utils"
 import { Plus } from "lucide-react"
 import { CompletedTable } from "./completed-table"
+import { ActiveRequestTracker } from "./active-request-tracker"
+import {Card, CardContent} from "@/components/ui/card";
+import {StatusBadge} from "@/components/status-tracker";
+import {formatDate} from "@/lib/utils";
 
 export default async function MyArmouryPage() {
   const session = await auth()
@@ -51,39 +51,15 @@ export default async function MyArmouryPage() {
       )}
 
       {/* Active requests */}
-      {active.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Active</h2>
-          <div className="space-y-3">
-            {active.map((r) => (
-              <Card key={r.id}>
-                <CardContent className="p-4 space-y-2">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div>
-                      <p className="font-medium text-sm">
-                        {labelMap[r.helmetType] ?? r.helmetType}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        #{r.id.slice(-8)} · {formatDate(r.createdAt)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <StatusBadge status={r.status as RequestStatus} />
-                      <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
-                        <Link href={`/requests/${r.id}`}>View</Link>
-                      </Button>
-                    </div>
-                  </div>
-                  <StatusTracker status={r.status as RequestStatus} />
-                  {r.artist?.name && (
-                    <p className="text-xs text-muted-foreground">Artist: {r.artist.name}</p>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
+      <ActiveRequestTracker initialRequests={active.map((r) => ({
+        id: r.id,
+        helmetType: labelMap[r.helmetType] ?? r.helmetType,
+        status: r.status,
+        artistName: r.artist?.name ?? null,
+        declineReason: r.declineReason ?? null,
+        createdAt: r.createdAt.toISOString(),
+        updatedAt: r.updatedAt.toISOString(),
+      }))} />
 
       {/* Completed — clickable table, image in side sheet */}
       {completed.length > 0 && (

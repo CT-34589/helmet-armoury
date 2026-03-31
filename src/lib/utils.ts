@@ -54,11 +54,12 @@ export const STATUS_CONFIG: Record<RequestStatus, {
 }
 
 export function formatDate(date: string | Date) {
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(date))
+  const d = new Date(date)
+  const datePart = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit", month: "short", year: "numeric", timeZone: "UTC",
+  }).format(d)
+  const timePart = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit", minute: "2-digit", timeZone: "UTC", hour12: false,
+  }).format(d)
+  return `${datePart}, ${timePart}`
 }

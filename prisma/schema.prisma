@@ -45,6 +45,7 @@ model User {
   artTeamTier      String?
   isBlacklisted    Boolean   @default(false)
   blacklistReason  String?
+  armouryOnly      Boolean   @default(false)  // inactive member allowed in only to view their helmets
   // Cached Discord role IDs as JSON array string
   discordRoles     String    @default("[]")
   // Cached KMC role IDs as JSON array string
@@ -106,6 +107,7 @@ model ConfigItem {
   note            String?
   active          Boolean  @default(true)
   standard        Boolean  @default(true)  // standard vs non-standard (for helmetType items only)
+  slotWeight      Int      @default(1)     // how many slots this item occupies (for decal/design items)
   sortOrder       Int      @default(0)
   allowedRoleIds  String   @default("[]")
   createdAt       DateTime @default(now())

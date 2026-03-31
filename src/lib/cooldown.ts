@@ -10,11 +10,19 @@ export type CooldownType = "custom" | "decaled"
 /**
  * Determines the user's KMC rank category from their cached KMC role IDs.
  * Priority order: head_cadre > cadre > sgm_plus > ct_sgt (default)
+ * Role IDs are read from SystemSettings when available, falling back to env vars.
  */
-export function getRankCategory(kmcRoles: string[]): RankCategory {
-  if (envList("KMC_HEAD_CADRE_ROLE_IDS").some((id) => kmcRoles.includes(id))) return "head_cadre"
-  if (envList("KMC_CADRE_ROLE_IDS").some((id) => kmcRoles.includes(id))) return "cadre"
-  if (envList("KMC_SGM_PLUS_ROLE_IDS").some((id) => kmcRoles.includes(id))) return "sgm_plus"
+export function getRankCategory(kmcRoles: string[], settings: Record<string, string> = {}): RankCategory {
+  function roleIds(settingKey: string, envKey: string): string[] {
+    const fromSettings = settings[settingKey]
+    if (fromSettings !== undefined) {
+      return fromSettings.split(",").map((s) => s.trim()).filter(Boolean)
+    }
+    return envList(envKey)
+  }
+  if (roleIds("cooldown_rank_head_cadre_role_ids", "KMC_HEAD_CADRE_ROLE_IDS").some((id) => kmcRoles.includes(id))) return "head_cadre"
+  if (roleIds("cooldown_rank_cadre_role_ids", "KMC_CADRE_ROLE_IDS").some((id) => kmcRoles.includes(id))) return "cadre"
+  if (roleIds("cooldown_rank_sgm_plus_role_ids", "KMC_SGM_PLUS_ROLE_IDS").some((id) => kmcRoles.includes(id))) return "sgm_plus"
   return "ct_sgt"
 }
 
@@ -38,13 +46,19 @@ export function determineCooldownType(
 }
 
 /**
- * Cooldown durations after completing a request:
- * Decaled: 3 months (first) / 6 months (subsequent)
- * Custom:  6 months (first) / 9 months (subsequent)
+ * Cooldown durations after completing a request.
+ * Defaults: Decaled 90/180 days, Custom 180/270 days.
+ * Overridden by SystemSetting keys when provided.
  */
-export function getCooldownDays(type: CooldownType, isFirst: boolean): number {
-  if (type === "decaled") return isFirst ? 90 : 180
-  return isFirst ? 180 : 270
+export function getCooldownDays(type: CooldownType, isFirst: boolean, settings: Record<string, string> = {}): number {
+  if (type === "decaled") {
+    return isFirst
+      ? parseInt(settings["cooldown_decaled_first_days"] ?? "90", 10)
+      : parseInt(settings["cooldown_decaled_subsequent_days"] ?? "180", 10)
+  }
+  return isFirst
+    ? parseInt(settings["cooldown_custom_first_days"] ?? "180", 10)
+    : parseInt(settings["cooldown_custom_subsequent_days"] ?? "270", 10)
 }
 
 export interface CooldownStatus {
@@ -62,7 +76,13 @@ export async function resolveHelmetCooldownType(
   helmetTypeName: string,
   kmcRoles: string[]
 ): Promise<CooldownType> {
-  const rank = getRankCategory(kmcRoles)
+  let settings: Record<string, string> = {}
+  try {
+    const rows = await (prisma as any).systemSetting.findMany()
+    settings = Object.fromEntries(rows.map((r: { key: string; value: string }) => [r.key, r.value]))
+  } catch {}
+
+  const rank = getRankCategory(kmcRoles, settings)
 
   const configItem = await prisma.configItem.findFirst({
     where: { category: "helmetType", name: helmetTypeName },
@@ -86,6 +106,7 @@ export async function resolveHelmetCooldownType(
 /**
  * Checks whether a user currently has an active cooldown from their last completed request.
  * "First" vs "subsequent" is per cooldown type (decaled / custom).
+ * Respects cooldown_decaled_enabled / cooldown_custom_enabled SystemSettings.
  */
 export async function checkUserCooldown(userId: string): Promise<CooldownStatus> {
   const lastCompleted = await prisma.request.findFirst({
@@ -104,6 +125,17 @@ export async function checkUserCooldown(userId: string): Promise<CooldownStatus>
 
   const type = lastCompleted.cooldownType as CooldownType
 
+  // Load cooldown settings
+  let settings: Record<string, string> = {}
+  try {
+    const rows = await (prisma as any).systemSetting.findMany()
+    settings = Object.fromEntries(rows.map((r: { key: string; value: string }) => [r.key, r.value]))
+  } catch {}
+
+  // Check if this cooldown type is disabled
+  const enabledKey = type === "decaled" ? "cooldown_decaled_enabled" : "cooldown_custom_enabled"
+  if (settings[enabledKey] === "false") return { active: false }
+
   // Count prior completed requests of the same cooldown type (to determine first vs subsequent)
   const priorSameType = await prisma.request.count({
     where: {
@@ -116,7 +148,7 @@ export async function checkUserCooldown(userId: string): Promise<CooldownStatus>
   })
 
   const isFirst = priorSameType === 0
-  const cooldownDays = getCooldownDays(type, isFirst)
+  const cooldownDays = getCooldownDays(type, isFirst, settings)
   const availableAt = new Date(lastCompleted.completedAt.getTime() + cooldownDays * 24 * 60 * 60 * 1000)
 
   if (Date.now() < availableAt.getTime()) {

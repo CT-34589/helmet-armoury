@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 
 interface DiscordRole {
@@ -8,40 +8,46 @@ interface DiscordRole {
   position: number
 }
 
-// In-memory cache — survives the request but not a server restart (fine for config UI)
-let cachedRoles: { id: string; name: string; color: number }[] | null = null
-let cacheExpiry = 0
+type CachedRoles = { id: string; name: string; color: number }[]
 
-export async function GET() {
+// Separate caches per guild
+let cachedMain: CachedRoles | null = null
+let mainExpiry = 0
+let cachedKmc: CachedRoles | null = null
+let kmcExpiry = 0
+
+async function fetchGuildRoles(guildId: string, botToken: string): Promise<CachedRoles> {
+  const res = await fetch(`https://discord.com/api/v10/guilds/${guildId}/roles`, {
+    headers: { Authorization: `Bot ${botToken}` },
+    cache: "no-store",
+  })
+  if (!res.ok) return []
+  const roles = (await res.json()) as DiscordRole[]
+  return roles
+    .filter((r) => r.name !== "@everyone")
+    .sort((a, b) => b.position - a.position)
+    .map(({ id, name, color }) => ({ id, name, color }))
+}
+
+export async function GET(req: NextRequest) {
   const session = await auth()
   if (!session?.user?.isArtTeam) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const botToken = process.env.DISCORD_BOT_TOKEN
-  const guildId = process.env.DISCORD_GUILD_ID
+  const guild = req.nextUrl.searchParams.get("guild") === "kmc" ? "kmc" : "main"
+  const guildId = guild === "kmc" ? process.env.KMC_GUILD_ID : process.env.DISCORD_GUILD_ID
 
-  if (!botToken || !guildId) {
-    return NextResponse.json([])
-  }
+  if (!botToken || !guildId) return NextResponse.json([])
 
-  if (cachedRoles && Date.now() < cacheExpiry) {
-    return NextResponse.json(cachedRoles)
-  }
+  const now = Date.now()
+  if (guild === "kmc" && cachedKmc && now < kmcExpiry) return NextResponse.json(cachedKmc)
+  if (guild === "main" && cachedMain && now < mainExpiry) return NextResponse.json(cachedMain)
 
   try {
-    const res = await fetch(`https://discord.com/api/v10/guilds/${guildId}/roles`, {
-      headers: { Authorization: `Bot ${botToken}` },
-      cache: "no-store",
-    })
-    if (!res.ok) return NextResponse.json([])
-
-    const roles = (await res.json()) as DiscordRole[]
-    cachedRoles = roles
-      .filter((r) => r.name !== "@everyone")
-      .sort((a, b) => b.position - a.position)
-      .map(({ id, name, color }) => ({ id, name, color }))
-    cacheExpiry = Date.now() + 5 * 60 * 1000
-
-    return NextResponse.json(cachedRoles)
+    const roles = await fetchGuildRoles(guildId, botToken)
+    if (guild === "kmc") { cachedKmc = roles; kmcExpiry = now + 5 * 60 * 1000 }
+    else { cachedMain = roles; mainExpiry = now + 5 * 60 * 1000 }
+    return NextResponse.json(roles)
   } catch {
     return NextResponse.json([])
   }

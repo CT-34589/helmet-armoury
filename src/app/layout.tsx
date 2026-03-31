@@ -1,4 +1,4 @@
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import "./globals.css"
 import { auth } from "@/lib/auth"
 import { AppSidebar } from "@/components/app-sidebar"
@@ -14,6 +14,12 @@ export const metadata: Metadata = {
   title: "104th Art Team — Helmet Armoury",
   description: "Request and manage custom helmets for the 104th Battalion",
   icons: { icon: "/logo.png" },
+}
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -33,6 +39,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   isArtTeam: session.user.isArtTeam ?? false,
                   artTeamTier: session.user.artTeamTier ?? null,
                   isBlacklisted: session.user.isBlacklisted ?? false,
+                  armouryOnly: session.user.armouryOnly ?? false,
                 }}
               />
               <AppShell>{children}</AppShell>
