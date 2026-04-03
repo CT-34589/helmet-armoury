@@ -5,7 +5,6 @@ export interface RoleCheckResult {
   isArtTeam: boolean
   artTeamTier: string | null
   hasCustomHelmetAccess: boolean   // rank-gated
-  isActiveMember: boolean
   discordRoles: string[]
   kmcRoles: string[]
 }
@@ -73,27 +72,10 @@ export async function checkDiscordRoles(
     customHelmetRoleIds.length === 0 ||
     customHelmetRoleIds.some((id) => discordRoles.includes(id))
 
-  // Active member check — must have a company role OR a staff role
-  // SystemSettings override env vars when present
-  function settingOrEnv(settingKey: string, envKey: string): string[] {
-    const fromSettings = settings[settingKey]
-    if (fromSettings !== undefined) {
-      return fromSettings.split(",").map((s) => s.trim()).filter(Boolean)
-    }
-    return envList(envKey)
-  }
-  const companyRoleIds = settingOrEnv("active_member_role_ids", "DISCORD_COMPANY_ROLE_IDS")
-  const staffRoleIds = settingOrEnv("active_staff_role_ids", "DISCORD_STAFF_ROLE_IDS")
-  const isActiveMember =
-    companyRoleIds.length === 0 || // if not configured, allow everyone
-    companyRoleIds.some((id) => discordRoles.includes(id)) ||
-    staffRoleIds.some((id) => discordRoles.includes(id))
-
   return {
     isArtTeam,
     artTeamTier,
     hasCustomHelmetAccess,
-    isActiveMember,
     discordRoles,
     kmcRoles,
   }

@@ -39,22 +39,28 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           ? await checkDiscordRoles(account.access_token, settingsMap)
           : null
 
-        // Block inactive members unless they have existing completed helmet records
-        if (roleData && !roleData.isActiveMember) {
-          const existingUser = await prisma.user.findFirst({
-            where: { discordId: account.providerAccountId },
-            select: { id: true },
-          })
-          const helmetCount = existingUser
-            ? await prisma.request.count({ where: { userId: existingUser.id, status: "COMPLETED" } })
-            : 0
-          if (helmetCount === 0) return "/unauthorized?reason=inactive"
-          // Has records — allow sign-in as armoury-only
-          await prisma.user.update({
-            where: { id: user.id! },
-            data: { armouryOnly: true },
-          })
-          return true
+        // Block members without an eligible role unless they have existing completed helmet records
+        if (roleData && !roleData.isArtTeam) {
+          const eligibleRoleIds = (settingsMap["request_eligible_role_ids"] ?? "")
+            .split(",").map((s) => s.trim()).filter(Boolean)
+          const allRoles = [...roleData.discordRoles, ...roleData.kmcRoles]
+          const isEligible = eligibleRoleIds.length === 0 || eligibleRoleIds.some((id) => allRoles.includes(id))
+          if (!isEligible) {
+            const existingUser = await prisma.user.findFirst({
+              where: { discordId: account.providerAccountId },
+              select: { id: true },
+            })
+            const helmetCount = existingUser
+              ? await prisma.request.count({ where: { userId: existingUser.id, status: "COMPLETED" } })
+              : 0
+            if (helmetCount === 0) return "/unauthorized?reason=inactive"
+            // Has records — allow sign-in as armoury-only
+            await prisma.user.update({
+              where: { id: user.id! },
+              data: { armouryOnly: true },
+            })
+            return true
+          }
         }
 
         // Resolve clearances — check which clearances list this user's ID as a member

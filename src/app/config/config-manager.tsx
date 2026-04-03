@@ -235,22 +235,9 @@ function SettingRolePicker({
 
   const activeRoles = guild === "main" ? mainRoles : kmcRoles
 
-  // Build a combined lookup for display
-  const allLoadedRoles = [...mainRoles, ...kmcRoles]
-  const roleName = (id: string) => allLoadedRoles.find((r) => r.id === id)?.name ?? id
-
   return (
     <div className="flex items-center justify-between py-1.5">
-      <div className="min-w-0">
-        <p className="text-xs font-medium">{label}</p>
-        {roleIds.length > 0 ? (
-          <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-xs">
-            {roleIds.slice(0, 3).map(roleName).join(", ")}{roleIds.length > 3 ? ` +${roleIds.length - 3} more` : ""}
-          </p>
-        ) : (
-          <p className="text-xs text-muted-foreground mt-0.5">No roles selected — env var fallback applies</p>
-        )}
-      </div>
+      <p className="text-xs font-medium">{label}</p>
       <Popover open={open} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
           <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5 font-normal shrink-0 ml-3" disabled={saving}>
@@ -795,10 +782,9 @@ export function ConfigManager({ items: initial, settings: initialSettings, helme
 
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2"><ShieldCheck className="h-4 w-4" />Active Members</CardTitle>
+                <CardTitle className="text-base flex items-center gap-2"><Shield className="h-4 w-4" />Request Eligibility</CardTitle>
                 <CardDescription>
-                  Which Discord roles are required to sign in and submit requests. Members without any of these roles are blocked at sign-in.
-                  If no roles are configured here, the <code className="text-[10px] bg-muted px-1 py-0.5 rounded">DISCORD_COMPANY_ROLE_IDS</code> / <code className="text-[10px] bg-muted px-1 py-0.5 rounded">DISCORD_STAFF_ROLE_IDS</code> env vars are used.
+                  Which roles can sign in and submit helmet requests. Art team members always bypass this. If no roles are configured, everyone can sign in and request.
                 </CardDescription>
               </CardHeader>
               <Separator />
@@ -806,21 +792,14 @@ export function ConfigManager({ items: initial, settings: initialSettings, helme
                 <div className="divide-y divide-border rounded-md border">
                   <div className="px-3">
                     <SettingRolePicker
-                      label="Company Roles"
-                      roleIds={(settings["active_member_role_ids"] ?? "").split(",").map((s) => s.trim()).filter(Boolean)}
-                      onSave={(ids) => updateSetting("active_member_role_ids", ids.join(","))}
-                    />
-                  </div>
-                  <div className="px-3">
-                    <SettingRolePicker
-                      label="Staff Roles"
-                      roleIds={(settings["active_staff_role_ids"] ?? "").split(",").map((s) => s.trim()).filter(Boolean)}
-                      onSave={(ids) => updateSetting("active_staff_role_ids", ids.join(","))}
+                      label="Eligible Roles (e.g. CT+)"
+                      roleIds={(settings["request_eligible_role_ids"] ?? "").split(",").map((s) => s.trim()).filter(Boolean)}
+                      onSave={(ids) => updateSetting("request_eligible_role_ids", ids.join(","))}
                     />
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  A member is active if they hold <span className="font-medium">any</span> Company role <span className="font-medium">or</span> any Staff role. Changes take effect at the member&apos;s next sign-in.
+                  Members must hold <span className="font-medium">any</span> of these roles to access the request form. Takes effect immediately.
                 </p>
               </CardContent>
             </Card>

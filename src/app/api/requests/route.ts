@@ -52,13 +52,28 @@ export async function POST(req: Request) {
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   if (session.user.isBlacklisted) return NextResponse.json({ error: "Blacklisted" }, { status: 403 })
 
-  // Check requests open
+  // Load all settings in one pass (used for eligibility, open/closed, and slot limits)
+  let settingsMap: Record<string, string> = {}
   try {
-    const openSetting = await (prisma as any).systemSetting.findUnique({ where: { key: "requests_open" } })
-    if (openSetting && openSetting.value !== "true") {
-      return NextResponse.json({ error: "Requests are currently closed" }, { status: 403 })
-    }
+    const rows = await (prisma as any).systemSetting.findMany()
+    settingsMap = Object.fromEntries(rows.map((r: { key: string; value: string }) => [r.key, r.value]))
   } catch {}
+
+  // Eligibility check — CT+ required unless art team
+  if (!session.user.isArtTeam) {
+    const eligibleRoleIds = (settingsMap["request_eligible_role_ids"] ?? "").split(",").map((s) => s.trim()).filter(Boolean)
+    if (eligibleRoleIds.length > 0) {
+      const userRoles = [...(session.user.discordRoles ?? []), ...(session.user.kmcRoles ?? [])]
+      if (!eligibleRoleIds.some((id) => userRoles.includes(id))) {
+        return NextResponse.json({ error: "You must be CT or higher to submit a request" }, { status: 403 })
+      }
+    }
+  }
+
+  // Check requests open
+  if (settingsMap["requests_open"] === "false") {
+    return NextResponse.json({ error: "Requests are currently closed" }, { status: 403 })
+  }
 
   // Cooldown check
   const cooldown = await checkUserCooldown(session.user.id)
@@ -93,6 +108,48 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Invalid data", issues: parsed.error.issues }, { status: 400 })
 
   const d = parsed.data
+
+  // Slot limit check — art team bypasses
+  if (!session.user.isArtTeam) {
+    const slotIds = (key: string) => (settingsMap[key] ?? "").split(",").map((s) => s.trim()).filter(Boolean)
+    const kmcRoles = session.user.discordRoles ?? []
+    const sgmPlusIds = slotIds("cooldown_rank_sgm_plus_role_ids").length > 0
+      ? slotIds("cooldown_rank_sgm_plus_role_ids")
+      : (process.env.KMC_SGM_PLUS_ROLE_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean)
+
+    if (!sgmPlusIds.some((id) => kmcRoles.includes(id))) {
+      let tier = "ct_po"
+      if (slotIds("slot_rank_sgt_fcpt_role_ids").some((id) => kmcRoles.includes(id)))     tier = "sgt_fcpt"
+      else if (slotIds("slot_rank_cpl_flt_role_ids").some((id) => kmcRoles.includes(id))) tier = "cpl_flt"
+      else if (slotIds("slot_rank_lcpl_fo_role_ids").some((id) => kmcRoles.includes(id))) tier = "lcpl_fo"
+
+      const decalLimit  = parseInt(settingsMap[`slots_decals_${tier}`]  ?? "0", 10)
+      const designLimit = parseInt(settingsMap[`slots_designs_${tier}`] ?? "0", 10)
+
+      if (decalLimit > 0 || designLimit > 0) {
+        // Fetch slot weights for submitted items
+        const allNames = [...d.decals, ...d.designs]
+        const configItems = allNames.length > 0
+          ? await prisma.configItem.findMany({ where: { name: { in: allNames } }, select: { name: true, slotWeight: true } })
+          : []
+        const weightMap = new Map(configItems.map((c) => [c.name, c.slotWeight ?? 1]))
+
+        if (decalLimit > 0) {
+          const used = d.decals.reduce((sum, n) => sum + (weightMap.get(n) ?? 1), 0)
+          if (used > decalLimit) {
+            return NextResponse.json({ error: `Too many decals — your rank allows ${decalLimit} slot${decalLimit !== 1 ? "s" : ""}` }, { status: 400 })
+          }
+        }
+        if (designLimit > 0) {
+          const used = d.designs.reduce((sum, n) => sum + (weightMap.get(n) ?? 1), 0)
+          if (used > designLimit) {
+            return NextResponse.json({ error: `Too many designs — your rank allows ${designLimit} slot${designLimit !== 1 ? "s" : ""}` }, { status: 400 })
+          }
+        }
+      }
+    }
+  }
+
   const request = await prisma.request.create({
     data: {
       userId: session.user.id,

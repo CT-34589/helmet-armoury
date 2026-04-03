@@ -69,6 +69,34 @@ export default async function RequestPage() {
     )
   }
 
+  // Eligibility check — must hold a request-eligible role (e.g. CT+) unless art team
+  if (!session.user.isArtTeam) {
+    try {
+      const eligibleSetting = await (prisma as any).systemSetting.findUnique({ where: { key: "request_eligible_role_ids" } })
+      const eligibleRoleIds = (eligibleSetting?.value ?? "").split(",").map((s: string) => s.trim()).filter(Boolean)
+      if (eligibleRoleIds.length > 0) {
+        const userRolesFull = [...(session.user.discordRoles ?? []), ...(session.user.kmcRoles ?? [])]
+        if (!eligibleRoleIds.some((id: string) => userRolesFull.includes(id))) {
+          return (
+            <div className="max-w-2xl animate-fade-in">
+              <div className="mb-6">
+                <h1 className="text-2xl font-semibold tracking-tight">New Request</h1>
+              </div>
+              <Card>
+                <CardContent className="p-8 text-center space-y-2">
+                  <p className="font-medium">You are not eligible to submit a request</p>
+                  <p className="text-sm text-muted-foreground">
+                    You must be CT or higher to request a helmet.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          )
+        }
+      }
+    } catch {}
+  }
+
   // Check requests open/closed + custom message
   let requestsOpen = true
   let closeMessage = "The Art Team is not accepting new helmet requests at this time. Check back later."
@@ -156,7 +184,7 @@ export default async function RequestPage() {
   } catch {}
 
   // Slot limits: only SGM+ rank gets unlimited. Cadre/Head Cadre still use their rank's slot tier.
-  const kmcRolesForSlots = session.user.kmcRoles ?? []
+  const kmcRolesForSlots = session.user.discordRoles ?? []
   const slotIds = (key: string) =>
     (settingsMap[key] ?? "").split(",").map((s) => s.trim()).filter(Boolean)
 
