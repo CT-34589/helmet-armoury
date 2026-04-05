@@ -36,6 +36,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   id: session.user.id!,
                   name: session.user.name,
                   image: session.user.image,
+
                   isArtTeam: session.user.isArtTeam ?? false,
                   artTeamTier: session.user.artTeamTier ?? null,
                   isBlacklisted: session.user.isBlacklisted ?? false,
@@ -48,7 +49,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         ) : (
           <main>{children}</main>
         )}
-        <Toaster position="bottom-right" richColors />
+        <Toaster position="top-right" richColors closeButton />
       </body>
     </html>
   )

@@ -1,7 +1,6 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { getAllConfigItems, getHelmetCategories } from "@/lib/cached-queries"
 import { ConfigManager } from "./config-manager"
 
 interface ClearanceOption { name: string; label: string }
@@ -11,8 +10,8 @@ export default async function Page() {
   if (!session?.user?.isArtTeam) redirect("/armoury/me")
 
   const [items, helmetCategories] = await Promise.all([
-    getAllConfigItems(),
-    getHelmetCategories(),
+    prisma.configItem.findMany({ orderBy: [{ sortOrder: "asc" }, { label: "asc" }] }),
+    prisma.helmetCategory.findMany({ orderBy: { sortOrder: "asc" } }),
   ])
 
   let clearanceDefs: ClearanceOption[] = []

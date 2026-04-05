@@ -23,7 +23,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Blacklist check before anything else
         const existing = await prisma.user.findFirst({
           where: { discordId: account.providerAccountId },
-          select: { isBlacklisted: true },
+          select: { isBlacklisted: true, isArtTeam: true },
         })
         if (existing?.isBlacklisted) return "/unauthorized?reason=blacklisted"
 
@@ -40,7 +40,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           : null
 
         // Block members without an eligible role unless they have existing completed helmet records
-        if (roleData && !roleData.isArtTeam) {
+        // Use DB isArtTeam as source of truth — Discord roles no longer gate art team access
+        const isArtTeamInDb = existing?.isArtTeam ?? false
+        if (roleData && !isArtTeamInDb) {
           const eligibleRoleIds = (settingsMap["request_eligible_role_ids"] ?? "")
             .split(",").map((s) => s.trim()).filter(Boolean)
           const allRoles = [...roleData.discordRoles, ...roleData.kmcRoles]
@@ -65,7 +67,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         // Resolve clearances — check which clearances list this user's ID as a member
         let userClearances: string[] = []
-        if (roleData?.isArtTeam) {
+        if (isArtTeamInDb) {
           try {
             const clearanceDefs = await prisma.artTeamClearance.findMany()
             userClearances = clearanceDefs
@@ -82,8 +84,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           data: {
             discordId: account.providerAccountId,
             discordName: user.name,
-            isArtTeam: roleData?.isArtTeam ?? false,
-            artTeamTier: roleData?.artTeamTier ?? null,
+            serverDisplayName: roleData?.serverDisplayName ?? null,
+            name: roleData?.serverDisplayName ?? user.name,
+            // isArtTeam and artTeamTier are managed in the DB via the Art Team page — not overwritten from Discord roles
             discordRoles: JSON.stringify(roleData?.discordRoles ?? []),
             kmcRoles: JSON.stringify(roleData?.kmcRoles ?? []),
             clearances: JSON.stringify(userClearances),

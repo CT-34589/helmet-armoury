@@ -14,7 +14,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { MultiCombobox, type ComboboxOption } from "@/components/ui/multi-combobox"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
-interface HelmetOption { name: string; label: string; helmetCategory?: string | null }
+interface HelmetOption { name: string; label: string; helmetCategory?: string | null; standard: boolean }
 interface VisorOption { name: string; label: string; requirement?: string }
 interface ArtistOption { id: string; name: string | null; image: string | null }
 interface WeightedOption extends ComboboxOption { slotWeight?: number }
@@ -26,8 +26,11 @@ interface Props {
   attachments: ComboboxOption[]
   artTeamMembers: ArtistOption[]
   hasCustomHelmetAccess: boolean
-  decalSlotLimit: number  // 0 = unlimited
-  designSlotLimit: number // 0 = unlimited
+  standardDecalLimit: number   // 0 = unlimited
+  standardDesignLimit: number  // 0 = unlimited
+  nonStandardDecalLimit: number
+  nonStandardDesignLimit: number
+  categoryOrder: string[]
 }
 
 type Step = "idle" | "validating" | "uploading-evidence" | "submitting" | "done" | "error"
@@ -43,7 +46,7 @@ const STEP_LABELS: Record<Step, string> = {
 
 const STEP_ORDER: Step[] = ["validating", "uploading-evidence", "submitting", "done"]
 
-export function RequestForm({ helmetTypes, decals, designs, visorColours, attachments, artTeamMembers, hasCustomHelmetAccess, decalSlotLimit, designSlotLimit }: Props) {
+export function RequestForm({ helmetTypes, decals, designs, visorColours, attachments, artTeamMembers, hasCustomHelmetAccess, standardDecalLimit, standardDesignLimit, nonStandardDecalLimit, nonStandardDesignLimit, categoryOrder }: Props) {
   const router = useRouter()
   const evidenceInputRef = useRef<HTMLInputElement>(null)
   const [step, setStep] = useState<Step>("idle")
@@ -59,21 +62,29 @@ export function RequestForm({ helmetTypes, decals, designs, visorColours, attach
   const [battleDamage, setBattleDamage] = useState(false)
   const [custom, setCustom] = useState(false)
   const [customDetails, setCustomDetails] = useState("")
-  const [evidenceFile, setEvidenceFile] = useState<File | null>(null)
+  const [evidenceFiles, setEvidenceFiles] = useState<File[]>([])
+  const [evidencePreviews, setEvidencePreviews] = useState<string[]>([])
   const [evidenceNote, setEvidenceNote] = useState("")
-  const [evidencePreview, setEvidencePreview] = useState<string | null>(null)
   const [requestedArtistId, setRequestedArtistId] = useState("")
 
-  // Group helmet types by category, preserving global sortOrder across groups.
-  // helmetTypes arrives sorted by sortOrder, so the first item seen sets each group's position.
-  const helmetGroups = new Map<string, HelmetOption[]>()
+  // Group helmet types by category, ordered by categoryOrder (HelmetCategory.sortOrder).
+  const helmetGroupMap = new Map<string, HelmetOption[]>()
   for (const h of helmetTypes) {
     const key = h.helmetCategory ?? "Other"
-    if (!helmetGroups.has(key)) helmetGroups.set(key, [])
-    helmetGroups.get(key)!.push(h)
+    if (!helmetGroupMap.has(key)) helmetGroupMap.set(key, [])
+    helmetGroupMap.get(key)!.push(h)
   }
+  // Render groups in the order defined by HelmetCategory.sortOrder; unknown categories appended last.
+  const orderedCategoryKeys = [
+    ...categoryOrder.filter((c) => helmetGroupMap.has(c)),
+    ...[...helmetGroupMap.keys()].filter((k) => !categoryOrder.includes(k)),
+  ]
 
-  const selectedHelmetLabel = helmetTypes.find((h) => h.name === helmetType)?.label
+  const selectedHelmet = helmetTypes.find((h) => h.name === helmetType)
+  const selectedHelmetLabel = selectedHelmet?.label
+  const isNonStandard = selectedHelmet ? !selectedHelmet.standard : false
+  const decalSlotLimit = isNonStandard ? nonStandardDecalLimit : standardDecalLimit
+  const designSlotLimit = isNonStandard ? nonStandardDesignLimit : standardDesignLimit
   const selectedVisorLabel = visorColours.find((v) => v.name === visorColour)?.label
   const selectedArtist = artTeamMembers.find((a) => a.id === requestedArtistId)
   const isSubmitting = step !== "idle" && step !== "error"
@@ -81,6 +92,9 @@ export function RequestForm({ helmetTypes, decals, designs, visorColours, attach
 
   const usedDecalSlots = selectedDecals.reduce((sum, v) => sum + (decals.find((d) => d.value === v)?.slotWeight ?? 1), 0)
   const usedDesignSlots = selectedDesigns.reduce((sum, v) => sum + (designs.find((d) => d.value === v)?.slotWeight ?? 1), 0)
+  const decalSlotsExceeded = decalSlotLimit > 0 && usedDecalSlots > decalSlotLimit
+  const designSlotsExceeded = designSlotLimit > 0 && usedDesignSlots > designSlotLimit
+  const slotsExceeded = decalSlotsExceeded || designSlotsExceeded
 
   const handleDecalChange = (next: string[]) => {
     if (decalSlotLimit > 0) {
@@ -98,13 +112,32 @@ export function RequestForm({ helmetTypes, decals, designs, visorColours, attach
     setSelectedDesigns(next)
   }
 
-  const handleEvidenceFile = (f: File) => {
-    if (!f.type.startsWith("image/")) { toast.error("Evidence must be an image file"); return }
-    if (f.size > 25 * 1024 * 1024) { toast.error("Evidence image must be under 25 MB"); return }
-    setEvidenceFile(f)
-    const reader = new FileReader()
-    reader.onload = (e) => setEvidencePreview(e.target?.result as string)
-    reader.readAsDataURL(f)
+  const MAX_EVIDENCE = 10
+  const handleEvidenceFiles = (incoming: FileList | File[]) => {
+    const arr = Array.from(incoming)
+    const images = arr.filter((f) => {
+      if (!f.type.startsWith("image/")) { toast.error(`${f.name} is not an image`); return false }
+      return true
+    })
+    setEvidenceFiles((prev) => {
+      const combined = [...prev, ...images].slice(0, MAX_EVIDENCE)
+      if (prev.length + images.length > MAX_EVIDENCE) toast.info(`Only ${MAX_EVIDENCE} images allowed — extras were dropped`)
+      // Generate previews for newly added
+      combined.slice(prev.length).forEach((f, i) => {
+        const reader = new FileReader()
+        reader.onload = (e) => setEvidencePreviews((p) => {
+          const next = [...p]
+          next[prev.length + i] = e.target?.result as string
+          return next
+        })
+        reader.readAsDataURL(f)
+      })
+      return combined
+    })
+  }
+  const removeEvidenceFile = (idx: number) => {
+    setEvidenceFiles((prev) => prev.filter((_, i) => i !== idx))
+    setEvidencePreviews((prev) => prev.filter((_, i) => i !== idx))
   }
 
   const advanceTo = (s: Step, pct: number) => { setStep(s); setProgress(pct) }
@@ -123,13 +156,13 @@ export function RequestForm({ helmetTypes, decals, designs, visorColours, attach
     setProgress(33)
 
     let evidenceUrl: string | undefined
-    if (evidenceFile || evidenceNote) {
+    if (evidenceFiles.length > 0 || evidenceNote) {
       advanceTo("uploading-evidence", 40)
       try {
         const fd = new FormData()
         fd.append("note", evidenceNote)
         fd.append("requestId", "pending")
-        if (evidenceFile) fd.append("file", evidenceFile)
+        evidenceFiles.forEach((f, i) => fd.append(`file_${i}`, f, f.name))
 
         const res = await fetch("/api/evidence", { method: "POST", body: fd })
         const data = await res.json()
@@ -195,9 +228,9 @@ export function RequestForm({ helmetTypes, decals, designs, visorColours, attach
               <CommandInput placeholder="Search types…" />
               <CommandList>
                 <CommandEmpty>No types found.</CommandEmpty>
-                {Array.from(helmetGroups.entries()).map(([group, items]) => (
+                {orderedCategoryKeys.map((group) => (
                   <CommandGroup key={group} heading={group}>
-                    {items.map((h) => (
+                    {helmetGroupMap.get(group)!.map((h) => (
                       <CommandItem key={h.name} value={`${group} ${h.label}`}
                         onSelect={() => { setHelmetType(h.name); setHelmetOpen(false) }}>
                         <Check className={cn("mr-2 h-4 w-4", helmetType === h.name ? "opacity-100" : "opacity-0")} />
@@ -226,7 +259,8 @@ export function RequestForm({ helmetTypes, decals, designs, visorColours, attach
         </div>
         <p className="text-xs text-muted-foreground">Select all you are eligible for. Requirements shown in the dropdown.</p>
         <MultiCombobox options={decals} value={selectedDecals} onChange={handleDecalChange}
-          placeholder="Search and select decals…" searchPlaceholder="Search decals…" />
+          placeholder="Search and select decals…" searchPlaceholder="Search decals…"
+          className={decalSlotsExceeded ? "border-destructive" : undefined} />
       </div>
 
       <Separator />
@@ -242,7 +276,8 @@ export function RequestForm({ helmetTypes, decals, designs, visorColours, attach
           )}
         </div>
         <MultiCombobox options={designs} value={selectedDesigns} onChange={handleDesignChange}
-          placeholder="Search and select designs…" searchPlaceholder="Search designs…" />
+          placeholder="Search and select designs…" searchPlaceholder="Search designs…"
+          className={designSlotsExceeded ? "border-destructive" : undefined} />
       </div>
 
       {/* Visor Colour — only shown if configured */}
@@ -330,46 +365,57 @@ export function RequestForm({ helmetTypes, decals, designs, visorColours, attach
 
       {/* Evidence */}
       <div className="space-y-2">
-        <Label>Evidence <span className="text-muted-foreground font-normal">(optional)</span></Label>
+        <div className="flex items-baseline justify-between">
+          <Label>Evidence <span className="text-muted-foreground font-normal">(optional)</span></Label>
+          {evidenceFiles.length > 0 && (
+            <span className="text-xs text-muted-foreground">{evidenceFiles.length} / {MAX_EVIDENCE} images · images are compressed before sending</span>
+          )}
+        </div>
         <p className="text-xs text-muted-foreground">
           Required for rank-restricted items and battle damage. Sent to the Art Team Discord channel when you submit.
         </p>
 
-        <div
-          onClick={() => evidenceInputRef.current?.click()}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleEvidenceFile(f) }}
-          className={cn(
-            "relative border-2 border-dashed rounded-md cursor-pointer transition-colors",
-            "flex flex-col items-center justify-center gap-2 min-h-[80px] p-3",
-            evidenceFile ? "border-solid border-border" : "border-border hover:border-border/80",
-            isSubmitting && "pointer-events-none opacity-60"
-          )}
-        >
-          <input ref={evidenceInputRef} type="file" accept="image/*" className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleEvidenceFile(f) }} />
-          {evidencePreview ? (
-            <div className="flex items-center gap-3 w-full">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={evidencePreview} alt="preview" className="h-12 w-12 rounded object-cover shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium truncate">{evidenceFile?.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {evidenceFile ? (evidenceFile.size / 1024 / 1024).toFixed(1) + " MB" : ""}
-                </p>
+        {/* Thumbnail grid */}
+        {evidenceFiles.length > 0 && (
+          <div className="grid grid-cols-5 gap-2">
+            {evidenceFiles.map((f, i) => (
+              <div key={i} className="relative group aspect-square rounded-md overflow-hidden border bg-muted">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {evidencePreviews[i] && <img src={evidencePreviews[i]} alt={f.name} className="w-full h-full object-cover" />}
+                <button
+                  type="button"
+                  onClick={() => removeEvidenceFile(i)}
+                  className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity"
+                  disabled={isSubmitting}
+                >
+                  <X className="h-4 w-4 text-white" />
+                </button>
               </div>
-              <button type="button" onClick={(e) => { e.stopPropagation(); setEvidenceFile(null); setEvidencePreview(null) }}
-                className="p-1 rounded hover:bg-muted shrink-0">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ) : (
-            <>
-              <Upload className="h-5 w-5 text-muted-foreground" />
-              <p className="text-xs text-muted-foreground">Drop screenshot here or click to browse</p>
-            </>
-          )}
-        </div>
+            ))}
+          </div>
+        )}
+
+        {/* Drop zone — only show when under limit */}
+        {evidenceFiles.length < MAX_EVIDENCE && (
+          <div
+            onClick={() => evidenceInputRef.current?.click()}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => { e.preventDefault(); handleEvidenceFiles(e.dataTransfer.files) }}
+            className={cn(
+              "border-2 border-dashed rounded-md cursor-pointer transition-colors",
+              "flex flex-col items-center justify-center gap-2 min-h-[72px] p-3",
+              "border-border hover:border-border/80",
+              isSubmitting && "pointer-events-none opacity-60"
+            )}
+          >
+            <input ref={evidenceInputRef} type="file" accept="image/*" multiple className="hidden"
+              onChange={(e) => { if (e.target.files) handleEvidenceFiles(e.target.files); e.target.value = "" }} />
+            <Upload className="h-4 w-4 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground">
+              {evidenceFiles.length === 0 ? "Drop screenshots here or click to browse" : "Add more images…"}
+            </p>
+          </div>
+        )}
 
         <Textarea value={evidenceNote} onChange={(e) => setEvidenceNote(e.target.value)}
           placeholder="Add any context or explanation for the Art Team… (optional)"
@@ -476,7 +522,7 @@ export function RequestForm({ helmetTypes, decals, designs, visorColours, attach
         </div>
       )}
 
-      <Button type="submit" disabled={isSubmitting} className="w-full">
+      <Button type="submit" disabled={isSubmitting || slotsExceeded} className="w-full">
         {isSubmitting && step !== "done" ? "Processing…" : "Submit Request"}
       </Button>
     </form>

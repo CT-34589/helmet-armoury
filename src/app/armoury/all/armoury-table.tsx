@@ -1,6 +1,6 @@
 "use client"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
-import { useTransition, useState } from "react"
+import { useTransition, useState, useEffect, useRef } from "react"
 import Image from "next/image"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -37,7 +37,10 @@ export function ArmouryTable({ requests, total, page, pageSize, currentQ, curren
   const [, startTransition] = useTransition()
   const [selected, setSelected] = useState<Row | null>(null)
   const [rows, setRows] = useState(requests)
+  useEffect(() => { setRows(requests) }, [requests])
   const [deleting, setDeleting] = useState(false)
+  const [searchValue, setSearchValue] = useState(currentQ ?? "")
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleDelete = async (id: string) => {
     if (!confirm("Permanently remove this helmet from the archive? This cannot be undone.")) return
@@ -61,6 +64,21 @@ export function ArmouryTable({ requests, total, page, pageSize, currentQ, curren
     startTransition(() => router.push(`${pathname}?${params.toString()}`))
   }
 
+  const handleSearchChange = (value: string) => {
+    setSearchValue(value)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => update("q", value || null), 400)
+  }
+
+  const handleClear = () => {
+    setSearchValue("")
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete("q")
+    params.delete("status")
+    params.delete("page")
+    startTransition(() => router.push(`${pathname}?${params.toString()}`))
+  }
+
   const pageTo = (p: number) => {
     const params = new URLSearchParams(searchParams.toString())
     params.set("page", String(p))
@@ -74,7 +92,7 @@ export function ArmouryTable({ requests, total, page, pageSize, currentQ, curren
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative flex-1 min-w-[200px] max-w-xs">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input defaultValue={currentQ} onChange={(e) => update("q", e.target.value || null)}
+            <Input value={searchValue} onChange={(e) => handleSearchChange(e.target.value)}
               placeholder="Search user or type…" className="pl-8 h-8 text-sm" />
           </div>
           <Select value={currentStatus ?? "ALL"} onValueChange={(v) => update("status", v === "ALL" ? null : v)}>
@@ -84,8 +102,8 @@ export function ArmouryTable({ requests, total, page, pageSize, currentQ, curren
               {REQUEST_STATUSES.map((s) => <SelectItem key={s} value={s}>{s.replace("_", " ")}</SelectItem>)}
             </SelectContent>
           </Select>
-          {(currentQ || currentStatus) && (
-            <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { update("q", null); update("status", null) }}>
+          {(searchValue || currentStatus) && (
+            <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={handleClear}>
               <X className="h-3.5 w-3.5" />Clear
             </Button>
           )}
@@ -165,7 +183,7 @@ export function ArmouryTable({ requests, total, page, pageSize, currentQ, curren
                   <div className="space-y-2">
                     <div className="rounded-md border bg-muted overflow-hidden">
                       <Image src={selected.completedImageUrl} alt={selected.helmetType}
-                        width={400} height={400} className="object-contain max-h-56 w-full" />
+                        width={400} height={400} className="object-contain max-h-56 w-full" unoptimized />
                     </div>
                     <div className="flex gap-2">
                       <Button asChild size="sm" className="flex-1">

@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -31,9 +31,40 @@ interface MyRequest {
   internalNotes: string | null
 }
 
-export function MyRequestsTable({ requests: initial }: { requests: MyRequest[] }) {
+export function MyRequestsTable({ requests: initial, currentUserId }: { requests: MyRequest[]; currentUserId: string }) {
   const [requests, setRequests] = useState(initial)
   const [selected, setSelected] = useState<MyRequest | null>(null)
+
+  useEffect(() => {
+    const es = new EventSource("/api/requests/stream")
+    es.onmessage = (e) => {
+      try {
+        const all: Array<{ id: string; artistId?: string | null; status: string; helmetType: string; user: { id: string; name: string | null; image: string | null }; decals: string[]; designs: string[]; visorColour?: string | null; attachments: string[]; battleDamage: boolean; custom: boolean; customDetails?: string | null; evidenceUrl?: string | null; evidenceNote?: string | null; internalNotes?: string | null; createdAt: string }> = JSON.parse(e.data)
+        setRequests(
+          all
+            .filter((r) => r.artistId === currentUserId && r.status === "IN_PROGRESS")
+            .map((r) => ({
+              id: r.id,
+              helmetType: r.helmetType,
+              userName: r.user.name,
+              userImage: r.user.image,
+              createdAt: r.createdAt,
+              decals: r.decals,
+              designs: r.designs,
+              visorColour: r.visorColour ?? null,
+              attachments: r.attachments,
+              battleDamage: r.battleDamage,
+              custom: r.custom,
+              customDetails: r.customDetails ?? null,
+              evidenceUrl: r.evidenceUrl ?? null,
+              evidenceNote: r.evidenceNote ?? null,
+              internalNotes: r.internalNotes ?? null,
+            }))
+        )
+      } catch {}
+    }
+    return () => es.close()
+  }, [currentUserId])
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [notes, setNotes] = useState("")
   const [completing, setCompleting] = useState(false)

@@ -32,6 +32,7 @@ export default async function ArtistPage({ params }: Props) {
       artist={artist}
       requests={requests.map((r) => ({
         ...r,
+        user: r.user,
         decals: resolveLabels(JSON.parse(r.decals) as string[], labelMap),
         designs: resolveLabels(JSON.parse(r.designs) as string[], labelMap),
         createdAt: r.createdAt.toISOString(),

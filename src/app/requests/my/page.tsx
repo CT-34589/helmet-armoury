@@ -28,6 +28,7 @@ export default async function MyArtRequestsPage() {
         </p>
       </div>
       <MyRequestsTable
+        currentUserId={session.user.id}
         requests={requests.map((r) => ({
           id: r.id,
           helmetType: labelMap[r.helmetType] ?? r.helmetType,

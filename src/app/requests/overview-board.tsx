@@ -187,9 +187,17 @@ export function OverviewBoard({ requests: initial, artists, currentUserId }: {
 
           {/* In Progress — grouped by artist */}
           <Column title="In Progress" count={inProgress.length}>
-            {artists
-              .filter((a) => inProgress.some((r) => r.artistId === a.id))
-              .map((artist) => {
+            {(() => {
+              // Build artist groups from the requests themselves so former art team members still show
+              const seen = new Set<string>()
+              const artistGroups: { id: string; name: string | null; image: string | null }[] = []
+              for (const r of inProgress) {
+                if (r.artist && !seen.has(r.artist.id)) {
+                  seen.add(r.artist.id)
+                  artistGroups.push(r.artist)
+                }
+              }
+              return artistGroups.map((artist) => {
                 const reqs = inProgress.filter((r) => r.artistId === artist.id)
                 return (
                   <div key={artist.id} className="space-y-2">
@@ -216,7 +224,8 @@ export function OverviewBoard({ requests: initial, artists, currentUserId }: {
                     ))}
                   </div>
                 )
-              })}
+              })
+            })()}
             {inProgress.filter((r) => !r.artistId).map((r) => (
               <RequestCard key={r.id} request={r} isLoading={loadingId === r.id} onClick={() => setSelectedId(r.id)} />
             ))}

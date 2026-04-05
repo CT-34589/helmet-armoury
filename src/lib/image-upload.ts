@@ -7,7 +7,7 @@ import { randomUUID } from "crypto"
 // e.g. "./public/uploads/helmets" or "/var/data/uploads/helmets"
 // UPLOAD_PUBLIC_PREFIX is the public URL prefix for those images
 // e.g. "/uploads/helmets"
-const UPLOAD_DIR = process.env.UPLOAD_DIR ?? join(process.cwd(), "public", "uploads", "helmets")
+const getUploadDir = () => process.env.UPLOAD_DIR ?? join(process.cwd(), "public", "uploads", "helmets")
 const PUBLIC_PREFIX = process.env.UPLOAD_PUBLIC_PREFIX ?? "/uploads/helmets"
 
 export interface ProcessedImage {
@@ -23,6 +23,7 @@ export async function processAndSaveHelmetImage(
   buffer: Buffer,
   originalName: string,
 ): Promise<ProcessedImage> {
+  const UPLOAD_DIR = getUploadDir()
   await mkdir(UPLOAD_DIR, { recursive: true })
 
   const originalSize = buffer.byteLength

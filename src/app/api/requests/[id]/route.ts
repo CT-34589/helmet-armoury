@@ -5,8 +5,8 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { resolveHelmetCooldownType } from "@/lib/cooldown"
 
-const UPLOAD_DIR = process.env.UPLOAD_DIR ?? join(process.cwd(), "public", "uploads", "helmets")
 const PUBLIC_PREFIX = process.env.UPLOAD_PUBLIC_PREFIX ?? "/uploads/helmets"
+const getUploadDir = () => process.env.UPLOAD_DIR ?? join(process.cwd(), "public", "uploads", "helmets")
 
 export async function DELETE(
   _req: Request,
@@ -24,7 +24,7 @@ export async function DELETE(
   // Delete the image file from disk if present
   if (request.completedImageUrl?.startsWith(PUBLIC_PREFIX)) {
     const filename = request.completedImageUrl.slice(PUBLIC_PREFIX.length + 1)
-    try { await unlink(join(UPLOAD_DIR, filename)) } catch { /* already gone */ }
+    try { await unlink(join(getUploadDir(), filename)) } catch { /* already gone */ }
   }
 
   await prisma.request.delete({ where: { id } })

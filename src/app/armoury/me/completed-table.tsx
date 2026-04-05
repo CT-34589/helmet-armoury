@@ -88,6 +88,7 @@ export function CompletedTable({ requests }: { requests: CompletedRequest[] }) {
                         width={400}
                         height={400}
                         className="object-contain max-h-64 w-full"
+                        unoptimized
                       />
                     </div>
                     <div className="flex gap-2">

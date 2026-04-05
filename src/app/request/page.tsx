@@ -150,7 +150,7 @@ export default async function RequestPage() {
 
   const helmetTypes = visibleItems
     .filter((c) => c.category === "helmetType")
-    .map((h) => ({ name: h.name, label: h.label, helmetCategory: h.helmetCategory }))
+    .map((h) => ({ name: h.name, label: h.label, helmetCategory: h.helmetCategory, standard: h.standard ?? true }))
 
   const decals = visibleItems
     .filter((c) => c.category === "decal")
@@ -169,12 +169,6 @@ export default async function RequestPage() {
     .map((a) => ({ value: a.name, label: a.label, requirement: a.requirement ?? undefined }))
 
   const isSAT = session.user.artTeamTier && ["head", "senior", "primary"].includes(session.user.artTeamTier)
-  const customHelmetRoleIds = (process.env.DISCORD_CUSTOM_HELMET_ROLE_IDS ?? "")
-    .split(",").map((id) => id.trim()).filter(Boolean)
-  const hasCustomHelmetAccess =
-    isSAT ||
-    customHelmetRoleIds.length === 0 ||
-    customHelmetRoleIds.some((id) => userRoles.includes(id))
 
   // Load settings and compute slot limits for this user's rank
   let settingsMap: Record<string, string> = {}
@@ -193,10 +187,18 @@ export default async function RequestPage() {
     ? slotIds("cooldown_rank_sgm_plus_role_ids")
     : (process.env.KMC_SGM_PLUS_ROLE_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean)
 
+  // Custom elements access — SGM+ in the config page rank tiers, or SAT
+  const hasCustomHelmetAccess =
+    !!isSAT ||
+    (sgmPlusRoleIds.length > 0 && sgmPlusRoleIds.some((id) => userRoles.includes(id)))
+
+  // Standard slot limits
   let decalSlotLimit = 0
   let designSlotLimit = 0
 
-  if (!sgmPlusRoleIds.some((id) => kmcRolesForSlots.includes(id))) {
+  const isSgmPlus = sgmPlusRoleIds.some((id) => kmcRolesForSlots.includes(id))
+
+  if (!isSgmPlus) {
     // Not SGM+ rank → determine slot tier from rank roles (Cadre/Head Cadre fall through here too)
     let slotTier = "ct_po"
     if (slotIds("slot_rank_sgt_fcpt_role_ids").some((id) => kmcRolesForSlots.includes(id)))     slotTier = "sgt_fcpt"
@@ -205,6 +207,20 @@ export default async function RequestPage() {
 
     decalSlotLimit  = parseInt(settingsMap[`slots_decals_${slotTier}`]  ?? "0", 10)
     designSlotLimit = parseInt(settingsMap[`slots_designs_${slotTier}`] ?? "0", 10)
+  }
+
+  // Non-standard slot limits — same tier detection as standard; SGM+ is unlimited (0)
+  let nonStandardDecalLimit = 0
+  let nonStandardDesignLimit = 0
+
+  if (!isSgmPlus) {
+    let nsSlotTier = "ct_po"
+    if (slotIds("slot_rank_sgt_fcpt_role_ids").some((id) => kmcRolesForSlots.includes(id)))     nsSlotTier = "sgt_fcpt"
+    else if (slotIds("slot_rank_cpl_flt_role_ids").some((id) => kmcRolesForSlots.includes(id))) nsSlotTier = "cpl_flt"
+    else if (slotIds("slot_rank_lcpl_fo_role_ids").some((id) => kmcRolesForSlots.includes(id))) nsSlotTier = "lcpl_fo"
+
+    nonStandardDecalLimit  = parseInt(settingsMap[`slots_nonstandard_decals_${nsSlotTier}`]  ?? "2", 10)
+    nonStandardDesignLimit = parseInt(settingsMap[`slots_nonstandard_designs_${nsSlotTier}`] ?? "1", 10)
   }
 
   return (
@@ -225,8 +241,11 @@ export default async function RequestPage() {
             attachments={attachments}
             artTeamMembers={artTeamMembers}
             hasCustomHelmetAccess={!!hasCustomHelmetAccess}
-            decalSlotLimit={decalSlotLimit}
-            designSlotLimit={designSlotLimit}
+            standardDecalLimit={decalSlotLimit}
+            standardDesignLimit={designSlotLimit}
+            nonStandardDecalLimit={nonStandardDecalLimit}
+            nonStandardDesignLimit={nonStandardDesignLimit}
+            categoryOrder={helmetCategories.map((c) => c.name)}
           />
         </CardContent>
       </Card>

@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { ArrowLeft, Check, StickyNote } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -16,7 +16,7 @@ interface Request {
   id: string; helmetType: string; decals: string[]; designs: string[]
   battleDamage: boolean; custom: boolean; customDetails?: string | null
   evidenceUrl?: string | null; evidenceNote?: string | null
-  status: string; completedImageUrl?: string | null
+  status: string; completedImageUrl?: string | null; artistId?: string | null
   internalNotes?: string | null; createdAt: string; updatedAt: string
   user: { id: string; name: string | null; image: string | null }
 }
@@ -25,6 +25,21 @@ interface Artist { id: string; name: string | null; image: string | null }
 export function ArtistBoard({ artist, requests: initial }: { artist: Artist; requests: Request[] }) {
   const [requests, setRequests] = useState(initial)
   const [loadingId, setLoadingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const es = new EventSource("/api/requests/stream")
+    es.onmessage = (e) => {
+      try {
+        const all: Request[] = JSON.parse(e.data)
+        setRequests((prev) => {
+          const updated = all.filter((r) => r.artistId === artist.id && r.status === "IN_PROGRESS")
+          // Preserve local uploadedUrls and notes state by merging into existing entries
+          return updated.map((r) => ({ ...prev.find((p) => p.id === r.id), ...r }))
+        })
+      } catch {}
+    }
+    return () => es.close()
+  }, [artist.id])
   const [uploadedUrls, setUploadedUrls] = useState<Record<string, string>>({})
   const [notes, setNotes] = useState<Record<string, string>>(
     Object.fromEntries(initial.map((r) => [r.id, r.internalNotes ?? ""]))

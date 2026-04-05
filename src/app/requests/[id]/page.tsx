@@ -83,6 +83,7 @@ export default async function RequestDetailPage({ params }: Props) {
               width={400}
               height={400}
               className="object-contain max-h-64 w-auto"
+              unoptimized
             />
           </div>
           <Separator />

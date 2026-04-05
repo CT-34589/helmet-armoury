@@ -7,6 +7,7 @@ export interface RoleCheckResult {
   hasCustomHelmetAccess: boolean   // rank-gated
   discordRoles: string[]
   kmcRoles: string[]
+  serverDisplayName: string | null
 }
 
 function envList(key: string): string[] {
@@ -16,20 +17,23 @@ function envList(key: string): string[] {
     .filter(Boolean)
 }
 
-export async function fetchGuildRoles(
+export async function fetchGuildMember(
   accessToken: string,
   guildId: string
-): Promise<string[]> {
+): Promise<{ roles: string[]; nick: string | null }> {
   try {
     const res = await fetch(
       `https://discord.com/api/users/@me/guilds/${guildId}/member`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     )
-    if (!res.ok) return []
+    if (!res.ok) return { roles: [], nick: null }
     const member = await res.json()
-    return Array.isArray(member.roles) ? member.roles : []
+    return {
+      roles: Array.isArray(member.roles) ? member.roles : [],
+      nick: member.nick ?? null,
+    }
   } catch {
-    return []
+    return { roles: [], nick: null }
   }
 }
 
@@ -41,10 +45,12 @@ export async function checkDiscordRoles(
   const kmcGuildId = process.env.KMC_GUILD_ID ?? ""
 
   // Fetch both guilds in parallel
-  const [discordRoles, kmcRoles] = await Promise.all([
-    mainGuildId ? fetchGuildRoles(accessToken, mainGuildId) : Promise.resolve([]),
-    kmcGuildId ? fetchGuildRoles(accessToken, kmcGuildId) : Promise.resolve([]),
+  const [mainMember, kmcMember] = await Promise.all([
+    mainGuildId ? fetchGuildMember(accessToken, mainGuildId) : Promise.resolve({ roles: [], nick: null }),
+    kmcGuildId ? fetchGuildMember(accessToken, kmcGuildId) : Promise.resolve({ roles: [], nick: null }),
   ])
+  const discordRoles = mainMember.roles
+  const kmcRoles = kmcMember.roles
 
   // Art team tier detection — ordered highest to lowest priority
   const tierRoles: Array<{ key: string; tier: string }> = [
@@ -78,5 +84,6 @@ export async function checkDiscordRoles(
     hasCustomHelmetAccess,
     discordRoles,
     kmcRoles,
+    serverDisplayName: mainMember.nick,
   }
 }

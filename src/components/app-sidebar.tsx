@@ -85,6 +85,7 @@ function NavItem({ href, label, icon: Icon, collapsed, onClick }: {
 
 function UserFooter({ user, collapsed }: { user: NavUser; collapsed: boolean }) {
   const tierLabel = user.artTeamTier ? TIER_LABELS[user.artTeamTier] ?? user.artTeamTier : null
+  const displayName = user.name
 
   return (
     <div className="border-t border-sidebar-border p-3">
@@ -98,11 +99,11 @@ function UserFooter({ user, collapsed }: { user: NavUser; collapsed: boolean }) 
             <Avatar className="h-7 w-7 shrink-0">
               <AvatarImage src={user.image ?? ""} />
               <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground text-xs">
-                {user.name?.[0]?.toUpperCase()}
+                {displayName?.[0]?.toUpperCase()}
               </AvatarFallback>
             </Avatar>
             <div className={cn("flex-1 min-w-0", collapsed && "md:hidden")}>
-              <p className="truncate text-xs font-medium text-sidebar-foreground">{user.name}</p>
+              <p className="truncate text-xs font-medium text-sidebar-foreground">{displayName}</p>
               {tierLabel && <p className="text-[10px] text-sidebar-foreground/50 truncate">{tierLabel}</p>}
             </div>
             <ChevronDown className={cn("h-3 w-3 text-sidebar-foreground/40 shrink-0", collapsed && "md:hidden")} />
@@ -112,7 +113,7 @@ function UserFooter({ user, collapsed }: { user: NavUser; collapsed: boolean }) 
           {collapsed && tierLabel && (
             <>
               <div className="hidden md:block px-2 py-1.5">
-                <p className="text-xs font-medium">{user.name}</p>
+                <p className="text-xs font-medium">{displayName}</p>
                 <p className="text-[10px] text-muted-foreground">{tierLabel}</p>
               </div>
               <DropdownMenuSeparator className="hidden md:block" />

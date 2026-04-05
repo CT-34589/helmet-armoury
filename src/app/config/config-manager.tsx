@@ -1,5 +1,5 @@
 "use client"
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Plus, Trash2, Search, X, Settings2, Pencil, Check, Shield, Loader2, ShieldCheck, GripVertical, Timer } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -21,6 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
@@ -51,7 +52,29 @@ const TAB_GROUPS = [
   { key: "design",           label: "Designs",            category: "design" },
 ]
 
+// ─── Role cache (module-level, lives for the page lifetime) ──────────────────
+
+const _roleCache: { main: DiscordRole[] | null; kmc: DiscordRole[] | null } = { main: null, kmc: null }
+const _roleFetch: { main: Promise<DiscordRole[]> | null; kmc: Promise<DiscordRole[]> | null } = { main: null, kmc: null }
+
+function fetchDiscordRoles(guild: "main" | "kmc"): Promise<DiscordRole[]> {
+  if (_roleCache[guild]) return Promise.resolve(_roleCache[guild]!)
+  if (!_roleFetch[guild]) {
+    _roleFetch[guild] = fetch(`/api/discord-roles?guild=${guild}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((roles: DiscordRole[]) => { _roleCache[guild] = roles; return roles })
+      .catch(() => [])
+  }
+  return _roleFetch[guild]!
+}
+
 // ─── Role Picker ─────────────────────────────────────────────────────────────
+
+function resolveRoleNames(roleIds: string[], mainRoles: DiscordRole[], kmcRoles: DiscordRole[]) {
+  const main = roleIds.map((id) => mainRoles.find((r) => r.id === id)).filter(Boolean) as DiscordRole[]
+  const kmc = roleIds.map((id) => kmcRoles.find((r) => r.id === id)).filter(Boolean) as DiscordRole[]
+  return { main, kmc }
+}
 
 function RolePickerCell({
   itemId, roleIds, onSave,
@@ -64,31 +87,35 @@ function RolePickerCell({
   const [selected, setSelected] = useState<string[]>(roleIds)
   const [saving, setSaving] = useState(false)
   const [guild, setGuild] = useState<"main" | "kmc">("main")
-  const [mainRoles, setMainRoles] = useState<DiscordRole[]>([])
-  const [kmcRoles, setKmcRoles] = useState<DiscordRole[]>([])
-  const [loadedGuilds, setLoadedGuilds] = useState<Set<string>>(new Set())
+  const [mainRoles, setMainRoles] = useState<DiscordRole[]>(() => _roleCache.main ?? [])
+  const [kmcRoles, setKmcRoles] = useState<DiscordRole[]>(() => _roleCache.kmc ?? [])
   const [rolesLoading, setRolesLoading] = useState(false)
 
-  const fetchRoles = async (g: "main" | "kmc") => {
-    if (loadedGuilds.has(g)) return
-    setRolesLoading(true)
-    try {
-      const res = await fetch(`/api/discord-roles?guild=${g}`)
-      if (res.ok) {
-        const roles: DiscordRole[] = await res.json()
-        if (g === "main") setMainRoles(roles)
-        else setKmcRoles(roles)
-        setLoadedGuilds((prev) => new Set([...prev, g]))
-      }
-    } finally {
-      setRolesLoading(false)
+  const loadGuild = async (g: "main" | "kmc") => {
+    if (_roleCache[g]) {
+      if (g === "main") setMainRoles(_roleCache.main!)
+      else setKmcRoles(_roleCache.kmc!)
+      return
     }
+    setRolesLoading(true)
+    const roles = await fetchDiscordRoles(g)
+    if (g === "main") setMainRoles(roles)
+    else setKmcRoles(roles)
+    setRolesLoading(false)
   }
+
+  // Pre-load both guilds for tooltip (uses cache after first fetch)
+  useEffect(() => {
+    if (roleIds.length === 0) return
+    loadGuild("main")
+    loadGuild("kmc")
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleOpenChange = async (o: boolean) => {
     if (o) {
       setSelected(roleIds)
-      await fetchRoles(guild)
+      await loadGuild(guild)
     } else {
       const changed = JSON.stringify([...selected].sort()) !== JSON.stringify([...roleIds].sort())
       if (changed) {
@@ -101,21 +128,62 @@ function RolePickerCell({
 
   const handleGuildChange = async (g: "main" | "kmc") => {
     setGuild(g)
-    await fetchRoles(g)
+    await loadGuild(g)
   }
 
   const activeRoles = guild === "main" ? mainRoles : kmcRoles
 
+  const resolved = resolveRoleNames(roleIds, mainRoles, kmcRoles)
+  const hasResolved = resolved.main.length + resolved.kmc.length > 0
+
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5 font-normal" disabled={saving}>
-          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Shield className="h-3 w-3" />}
-          {roleIds.length === 0
-            ? <span className="text-muted-foreground">All</span>
-            : <span>{roleIds.length} role{roleIds.length !== 1 ? "s" : ""}</span>}
-        </Button>
-      </PopoverTrigger>
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5 font-normal" disabled={saving}>
+                {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Shield className="h-3 w-3" />}
+                {roleIds.length === 0
+                  ? <span className="text-muted-foreground">All</span>
+                  : <span>{roleIds.length} role{roleIds.length !== 1 ? "s" : ""}</span>}
+              </Button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          {roleIds.length > 0 && (
+            <TooltipContent side="left" className="max-w-56 space-y-1.5 p-2.5">
+              {!hasResolved ? (
+                <p className="text-xs text-muted-foreground">Loading…</p>
+              ) : (
+                <>
+                  {resolved.main.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Main Server</p>
+                      {resolved.main.map((r) => (
+                        <div key={r.id} className="flex items-center gap-1.5 py-0.5">
+                          <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: r.color ? `#${r.color.toString(16).padStart(6, "0")}` : "hsl(var(--muted))" }} />
+                          <span className="text-xs">{r.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {resolved.kmc.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">KMC</p>
+                      {resolved.kmc.map((r) => (
+                        <div key={r.id} className="flex items-center gap-1.5 py-0.5">
+                          <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: r.color ? `#${r.color.toString(16).padStart(6, "0")}` : "hsl(var(--muted))" }} />
+                          <span className="text-xs">{r.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </TooltipContent>
+          )}
+        </Tooltip>
+      </TooltipProvider>
       <PopoverContent className="w-72 p-0" align="end">
         <div className="px-3 pt-3 pb-2 border-b">
           <p className="text-xs font-semibold">Role Restriction</p>
@@ -189,6 +257,7 @@ function RolePickerCell({
 
 // ─── Setting Role Picker ──────────────────────────────────────────────────────
 
+
 function SettingRolePicker({
   label, roleIds, onSave,
 }: {
@@ -200,29 +269,34 @@ function SettingRolePicker({
   const [selected, setSelected] = useState<string[]>(roleIds)
   const [saving, setSaving] = useState(false)
   const [guild, setGuild] = useState<"main" | "kmc">("kmc")
-  const [mainRoles, setMainRoles] = useState<DiscordRole[]>([])
-  const [kmcRoles, setKmcRoles] = useState<DiscordRole[]>([])
-  const [loadedGuilds, setLoadedGuilds] = useState<Set<string>>(new Set())
+  const [mainRoles, setMainRoles] = useState<DiscordRole[]>(() => _roleCache.main ?? [])
+  const [kmcRoles, setKmcRoles] = useState<DiscordRole[]>(() => _roleCache.kmc ?? [])
   const [rolesLoading, setRolesLoading] = useState(false)
 
-  const fetchRoles = async (g: "main" | "kmc") => {
-    if (loadedGuilds.has(g)) return
+  const loadGuild = async (g: "main" | "kmc") => {
+    if (_roleCache[g]) {
+      if (g === "main") setMainRoles(_roleCache.main!)
+      else setKmcRoles(_roleCache.kmc!)
+      return
+    }
     setRolesLoading(true)
-    try {
-      const res = await fetch(`/api/discord-roles?guild=${g}`)
-      if (res.ok) {
-        const roles: DiscordRole[] = await res.json()
-        if (g === "main") setMainRoles(roles)
-        else setKmcRoles(roles)
-        setLoadedGuilds((prev) => new Set([...prev, g]))
-      }
-    } finally { setRolesLoading(false) }
+    const roles = await fetchDiscordRoles(g)
+    if (g === "main") setMainRoles(roles)
+    else setKmcRoles(roles)
+    setRolesLoading(false)
   }
+
+  useEffect(() => {
+    if (roleIds.length > 0) {
+      loadGuild("main")
+      loadGuild("kmc")
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleOpenChange = async (o: boolean) => {
     if (o) {
       setSelected(roleIds)
-      await fetchRoles(guild)
+      await loadGuild(guild)
     } else {
       const changed = JSON.stringify([...selected].sort()) !== JSON.stringify([...roleIds].sort())
       if (changed) {
@@ -239,12 +313,49 @@ function SettingRolePicker({
     <div className="flex items-center justify-between py-1.5">
       <p className="text-xs font-medium">{label}</p>
       <Popover open={open} onOpenChange={handleOpenChange}>
-        <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5 font-normal shrink-0 ml-3" disabled={saving}>
-            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Shield className="h-3 w-3" />}
-            {roleIds.length === 0 ? <span className="text-muted-foreground">Set roles</span> : <span>{roleIds.length} role{roleIds.length !== 1 ? "s" : ""}</span>}
-          </Button>
-        </PopoverTrigger>
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5 font-normal shrink-0 ml-3" disabled={saving}>
+                  {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Shield className="h-3 w-3" />}
+                  {roleIds.length === 0 ? <span className="text-muted-foreground">Set roles</span> : <span>{roleIds.length} role{roleIds.length !== 1 ? "s" : ""}</span>}
+                </Button>
+              </PopoverTrigger>
+            </TooltipTrigger>
+            {roleIds.length > 0 && (() => {
+              const resolved = resolveRoleNames(roleIds, mainRoles, kmcRoles)
+              const hasResolved = resolved.main.length > 0 || resolved.kmc.length > 0
+              if (!hasResolved) return null
+              return (
+                <TooltipContent side="left" className="max-w-56 text-xs space-y-1.5 p-2">
+                  {resolved.main.length > 0 && (
+                    <div>
+                      <p className="font-semibold text-muted-foreground mb-1">Main Server</p>
+                      {resolved.main.map((r) => (
+                        <div key={r.id} className="flex items-center gap-1.5">
+                          <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: r.color ? `#${r.color.toString(16).padStart(6, "0")}` : "hsl(var(--muted))" }} />
+                          <span>{r.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {resolved.kmc.length > 0 && (
+                    <div>
+                      <p className="font-semibold text-muted-foreground mb-1">KMC</p>
+                      {resolved.kmc.map((r) => (
+                        <div key={r.id} className="flex items-center gap-1.5">
+                          <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: r.color ? `#${r.color.toString(16).padStart(6, "0")}` : "hsl(var(--muted))" }} />
+                          <span>{r.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </TooltipContent>
+              )
+            })()}
+          </Tooltip>
+        </TooltipProvider>
         <PopoverContent className="w-72 p-0" align="end">
           <div className="px-3 pt-3 pb-2 border-b">
             <p className="text-xs font-semibold">{label} — Role IDs</p>
@@ -253,7 +364,7 @@ function SettingRolePicker({
               {(["main", "kmc"] as const).map((g) => (
                 <button
                   key={g}
-                  onClick={async () => { setGuild(g); await fetchRoles(g) }}
+                  onClick={async () => { setGuild(g); await loadGuild(g) }}
                   className={cn(
                     "text-xs px-2 py-0.5 rounded transition-colors",
                     guild === g ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:text-foreground",
@@ -368,7 +479,8 @@ export function ConfigManager({ items: initial, settings: initialSettings, helme
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids: reordered.map((i) => i.id) }),
     })
-    if (!res.ok) toast.error("Failed to save order")
+    if (res.ok) toast.success("Order saved")
+    else toast.error("Failed to save order")
   }, [])
 
   const reorderCategories = useCallback(async (event: DragEndEvent) => {
@@ -384,7 +496,8 @@ export function ConfigManager({ items: initial, settings: initialSettings, helme
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids: reordered.map((c) => c.id) }),
     })
-    if (!res.ok) toast.error("Failed to save order")
+    if (res.ok) toast.success("Order saved")
+    else toast.error("Failed to save order")
   }, [helmetCategories])
   const [decalSubCat, setDecalSubCat] = useState("all")
   const [designSubCat, setDesignSubCat] = useState("all")
@@ -446,7 +559,9 @@ export function ConfigManager({ items: initial, settings: initialSettings, helme
   }
 
   const saveRoles = async (id: string, roleIds: string[]) => {
-    await mutate(id, { allowedRoleIds: roleIds })
+    const ok = await mutate(id, { allowedRoleIds: roleIds })
+    if (ok) toast.success("Permissions updated")
+    else toast.error("Failed to update permissions")
   }
 
   const saveEdit = async (id: string) => {
@@ -782,6 +897,98 @@ export function ConfigManager({ items: initial, settings: initialSettings, helme
 
             <Card>
               <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2"><Timer className="h-4 w-4" />Slot Limits</CardTitle>
+                <CardDescription>
+                  Design/decal slots per rank tier, depending on whether the selected helmet is standard or non-standard.
+                </CardDescription>
+              </CardHeader>
+              <Separator />
+              <CardContent className="pt-0">
+                <Tabs defaultValue="standard">
+                  <div className="border-b px-0">
+                    <TabsList className="h-9 bg-transparent rounded-none gap-0 p-0">
+                      <TabsTrigger value="standard" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent text-xs px-4">Standard</TabsTrigger>
+                      <TabsTrigger value="nonstandard" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent text-xs px-4">Non-Standard</TabsTrigger>
+                    </TabsList>
+                  </div>
+                  <TabsContent value="standard" className="mt-0 pt-4 space-y-0">
+                    <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center pb-2 px-1">
+                      <p className="text-xs font-medium text-muted-foreground">Rank Tier</p>
+                      <p className="text-xs font-medium text-muted-foreground w-20 text-center">Designs</p>
+                      <p className="text-xs font-medium text-muted-foreground w-20 text-center">Decals</p>
+                    </div>
+                    <div className="divide-y divide-border rounded-md border">
+                      {([
+                        { label: "SGT/FCPT", roleKey: "slot_rank_sgt_fcpt_role_ids", designKey: "slots_designs_sgt_fcpt", decalKey: "slots_decals_sgt_fcpt", def: "5" },
+                        { label: "CPL/FLT",  roleKey: "slot_rank_cpl_flt_role_ids",  designKey: "slots_designs_cpl_flt",  decalKey: "slots_decals_cpl_flt",  def: "4" },
+                        { label: "LCPL/FO",  roleKey: "slot_rank_lcpl_fo_role_ids",  designKey: "slots_designs_lcpl_fo",  decalKey: "slots_decals_lcpl_fo",  def: "3" },
+                        { label: "CT/PO",    roleKey: "slot_rank_ct_po_role_ids",    designKey: "slots_designs_ct_po",    decalKey: "slots_decals_ct_po",    def: "2" },
+                      ]).map(({ label, roleKey, designKey, decalKey, def }) => (
+                        <div key={label} className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center px-3">
+                          <SettingRolePicker label={label}
+                            roleIds={(settings[roleKey] ?? "").split(",").map((s) => s.trim()).filter(Boolean)}
+                            onSave={(ids) => updateSetting(roleKey, ids.join(","))} />
+                          <Input aria-label={`${label} standard designs`} type="number" min={0} max={999} value={settings[designKey] ?? def}
+                            onChange={(e) => setSettings((p) => ({ ...p, [designKey]: e.target.value }))}
+                            onBlur={(e) => updateSetting(designKey, e.target.value || def)}
+                            className="h-7 w-20 text-xs text-center" />
+                          <Input aria-label={`${label} standard decals`} type="number" min={0} max={999} value={settings[decalKey] ?? def}
+                            onChange={(e) => setSettings((p) => ({ ...p, [decalKey]: e.target.value }))}
+                            onBlur={(e) => updateSetting(decalKey, e.target.value || def)}
+                            className="h-7 w-20 text-xs text-center" />
+                        </div>
+                      ))}
+                      <div className="px-3 py-2.5 flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium">SGM+</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">Cadre/Head Cadre use their tier above</p>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Unlimited</p>
+                      </div>
+                    </div>
+                  </TabsContent>
+                  <TabsContent value="nonstandard" className="mt-0 pt-4 space-y-0">
+                    <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center pb-2 px-1">
+                      <p className="text-xs font-medium text-muted-foreground">Rank Tier</p>
+                      <p className="text-xs font-medium text-muted-foreground w-20 text-center">Designs</p>
+                      <p className="text-xs font-medium text-muted-foreground w-20 text-center">Decals</p>
+                    </div>
+                    <div className="divide-y divide-border rounded-md border">
+                      {([
+                        { label: "SGT/FCPT", roleKey: "slot_rank_sgt_fcpt_role_ids", designKey: "slots_nonstandard_designs_sgt_fcpt", decalKey: "slots_nonstandard_decals_sgt_fcpt", def: "1" },
+                        { label: "CPL/FLT",  roleKey: "slot_rank_cpl_flt_role_ids",  designKey: "slots_nonstandard_designs_cpl_flt",  decalKey: "slots_nonstandard_decals_cpl_flt",  def: "1" },
+                        { label: "LCPL/FO",  roleKey: "slot_rank_lcpl_fo_role_ids",  designKey: "slots_nonstandard_designs_lcpl_fo",  decalKey: "slots_nonstandard_decals_lcpl_fo",  def: "1" },
+                        { label: "CT/PO",    roleKey: "slot_rank_ct_po_role_ids",    designKey: "slots_nonstandard_designs_ct_po",    decalKey: "slots_nonstandard_decals_ct_po",    def: "1" },
+                      ]).map(({ label, roleKey, designKey, decalKey, def }) => (
+                        <div key={label} className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center px-3">
+                          <SettingRolePicker label={label}
+                            roleIds={(settings[roleKey] ?? "").split(",").map((s) => s.trim()).filter(Boolean)}
+                            onSave={(ids) => updateSetting(roleKey, ids.join(","))} />
+                          <Input aria-label={`${label} non-standard designs`} type="number" min={0} max={999} value={settings[designKey] ?? def}
+                            onChange={(e) => setSettings((p) => ({ ...p, [designKey]: e.target.value }))}
+                            onBlur={(e) => updateSetting(designKey, e.target.value || def)}
+                            className="h-7 w-20 text-xs text-center" />
+                          <Input aria-label={`${label} non-standard decals`} type="number" min={0} max={999} value={settings[decalKey] ?? def}
+                            onChange={(e) => setSettings((p) => ({ ...p, [decalKey]: e.target.value }))}
+                            onBlur={(e) => updateSetting(decalKey, e.target.value || def)}
+                            className="h-7 w-20 text-xs text-center" />
+                        </div>
+                      ))}
+                      <div className="px-3 py-2.5 flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium">SGM+</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">Cadre/Head Cadre use their tier above</p>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Unlimited</p>
+                      </div>
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2"><Shield className="h-4 w-4" />Request Eligibility</CardTitle>
                 <CardDescription>
                   Which roles can sign in and submit helmet requests. Art team members always bypass this. If no roles are configured, everyone can sign in and request.
@@ -801,59 +1008,6 @@ export function ConfigManager({ items: initial, settings: initialSettings, helme
                 <p className="text-xs text-muted-foreground">
                   Members must hold <span className="font-medium">any</span> of these roles to access the request form. Takes effect immediately.
                 </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2"><Timer className="h-4 w-4" />Slot Limits</CardTitle>
-                <CardDescription>
-                  Configure which roles map to each rank tier and how many design/decal slots that tier gets. SGM+ and above have no slot limit.
-                </CardDescription>
-              </CardHeader>
-              <Separator />
-              <CardContent className="pt-4 space-y-0">
-                <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center pb-2 px-1">
-                  <p className="text-xs font-medium text-muted-foreground">Rank Tier</p>
-                  <p className="text-xs font-medium text-muted-foreground w-20 text-center">Designs</p>
-                  <p className="text-xs font-medium text-muted-foreground w-20 text-center">Decals</p>
-                </div>
-                <div className="divide-y divide-border rounded-md border">
-                  {([
-                    { label: "SGT/FCPT", roleKey: "slot_rank_sgt_fcpt_role_ids", designKey: "slots_designs_sgt_fcpt", decalKey: "slots_decals_sgt_fcpt", def: "5" },
-                    { label: "CPL/FLT",  roleKey: "slot_rank_cpl_flt_role_ids",  designKey: "slots_designs_cpl_flt",  decalKey: "slots_decals_cpl_flt",  def: "4" },
-                    { label: "LCPL/FO",  roleKey: "slot_rank_lcpl_fo_role_ids",  designKey: "slots_designs_lcpl_fo",  decalKey: "slots_decals_lcpl_fo",  def: "3" },
-                    { label: "CT/PO",    roleKey: "slot_rank_ct_po_role_ids",    designKey: "slots_designs_ct_po",    decalKey: "slots_decals_ct_po",    def: "2" },
-                  ]).map(({ label, roleKey, designKey, decalKey, def }) => (
-                    <div key={label} className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center px-3">
-                      <SettingRolePicker
-                        label={label}
-                        roleIds={(settings[roleKey] ?? "").split(",").map((s) => s.trim()).filter(Boolean)}
-                        onSave={(ids) => updateSetting(roleKey, ids.join(","))}
-                      />
-                      <Input
-                        type="number" min={0} max={999}
-                        value={settings[designKey] ?? def}
-                        onChange={(e) => setSettings((p) => ({ ...p, [designKey]: e.target.value }))}
-                        onBlur={(e) => updateSetting(designKey, e.target.value || def)}
-                        className="h-7 w-20 text-xs text-center"
-                      />
-                      <Input
-                        type="number" min={0} max={999}
-                        value={settings[decalKey] ?? def}
-                        onChange={(e) => setSettings((p) => ({ ...p, [decalKey]: e.target.value }))}
-                        onBlur={(e) => updateSetting(decalKey, e.target.value || def)}
-                        className="h-7 w-20 text-xs text-center"
-                      />
-                    </div>
-                  ))}
-                  <div className="px-3 py-2.5 flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-medium">SGM+ rank</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Cadre/Head Cadre still use their rank&apos;s tier above</p>
-                    </div>
-                    <p className="text-xs text-muted-foreground">Unlimited</p>
-                  </div>
-                </div>
               </CardContent>
             </Card>
           </div>
@@ -1079,7 +1233,11 @@ export function ConfigManager({ items: initial, settings: initialSettings, helme
                               </TableCell>
                               {tab.key === "helmetType" && (
                                 <TableCell className="text-center">
-                                  <Switch checked={item.standard} onCheckedChange={(v) => mutate(item.id, { standard: v })} />
+                                  <Switch
+                                    checked={item.standard}
+                                    onCheckedChange={(v) => mutate(item.id, { standard: v })}
+                                    className="data-[state=checked]:bg-emerald-600 data-[state=unchecked]:bg-destructive"
+                                  />
                                 </TableCell>
                               )}
                               {tab.key !== "helmetType" && (

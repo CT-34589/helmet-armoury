@@ -10,6 +10,8 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PORT: 3000,
+        UPLOAD_DIR: "/var/data/helmet-armoury/uploads/helmets",
+        UPLOAD_PUBLIC_PREFIX: "/uploads/helmets",
       },
       // Restart if the app crashes, with exponential backoff
       restart_delay: 3000,
