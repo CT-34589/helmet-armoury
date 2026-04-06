@@ -1,0 +1,17 @@
+{
+  "name": "104th Helmet Armoury",
+  "short_name": "Armoury",
+  "description": "Request and manage custom helmets for the 104th Battalion",
+  "start_url": "/armoury/me",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
