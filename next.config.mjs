@@ -1,5 +1,20 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  async headers() {
+    return [
+      {
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Type", value: "application/javascript" },
+        ],
+      },
+      {
+        source: "/manifest.json",
+        headers: [{ key: "Content-Type", value: "application/json" }],
+      },
+    ]
+  },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'cdn.discordapp.com' },
@@ -12,7 +27,7 @@ const nextConfig = {
       { pathname: '/**'},
     ],
   },
-   allowedDevOrigins: ['192.168.1.159'],
+   allowedDevOrigins: ['192.168.1.159', 'localhost'],
 };
 
 export default nextConfig;

@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -53,12 +53,13 @@ model User {
   kmcRoles         String    @default("[]")
   // Granted clearance names as JSON array string e.g. ["sf"]
   clearances       String    @default("[]")
-  accounts         Account[]
-  sessions         Session[]
-  requests         Request[]
-  assignedRequests Request[] @relation("AssignedArtist")
-  directHelmets    Request[] @relation("DirectAdd")
-  createdAt        DateTime  @default(now())
+  accounts              Account[]
+  sessions              Session[]
+  requests              Request[]
+  assignedRequests      Request[]          @relation("AssignedArtist")
+  directHelmets         Request[]          @relation("DirectAdd")
+  pushSubscriptions     PushSubscription[]
+  createdAt             DateTime           @default(now())
 }
 
 model Request {
@@ -145,6 +146,17 @@ model RateLimit {
   action    String
   createdAt DateTime @default(now())
   @@index([userId, action, createdAt])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+  @@index([userId])
 }
 
 

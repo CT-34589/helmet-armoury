@@ -2,6 +2,8 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { z } from "zod"
+import { sendPushToUser } from "@/lib/web-push"
+import { publishSseEvent } from "@/lib/sse-bus"
 
 const ALLOWED_TIERS = ["head", "senior", "primary"]
 
@@ -51,6 +53,13 @@ export async function POST(req: Request) {
       artistId: session.user.id,
     },
   })
+
+  void sendPushToUser(userId, {
+    title: "Helmet Added",
+    body: "The Art Team has added a helmet to your armoury!",
+    url: "/armoury/me",
+  })
+  void publishSseEvent("user", userId)
 
   return NextResponse.json(request, { status: 201 })
 }

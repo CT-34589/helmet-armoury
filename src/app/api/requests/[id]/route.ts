@@ -4,6 +4,8 @@ import { join } from "path"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { resolveHelmetCooldownType } from "@/lib/cooldown"
+import { sendPushToUser } from "@/lib/web-push"
+import { publishSseEvent } from "@/lib/sse-bus"
 
 const PUBLIC_PREFIX = process.env.UPLOAD_PUBLIC_PREFIX ?? "/uploads/helmets"
 const getUploadDir = () => process.env.UPLOAD_DIR ?? join(process.cwd(), "public", "uploads", "helmets")
@@ -28,6 +30,7 @@ export async function DELETE(
   }
 
   await prisma.request.delete({ where: { id } })
+  void publishSseEvent("art-team")
   return NextResponse.json({ ok: true })
 }
 
@@ -72,6 +75,18 @@ export async function PATCH(
   }
 
   const updated = await prisma.request.update({ where: { id }, data })
+
+  const notifyMap: Record<string, { title: string; body: string }> = {
+    ACCEPTED:    { title: "Request Accepted", body: "Your helmet request has been accepted by the Art Team." },
+    IN_PROGRESS: { title: "Helmet In Progress", body: "An artist has been assigned and is working on your helmet." },
+    COMPLETED:   { title: "Helmet Ready!", body: "Your helmet has been completed. Check your armoury!" },
+    DECLINED:    { title: "Request Declined", body: "Your helmet request has been declined." },
+  }
+  const notify = typeof bodyObj.status === "string" ? notifyMap[bodyObj.status] : undefined
+  if (notify) void sendPushToUser(updated.userId, { ...notify, url: "/armoury/me" })
+
+  void publishSseEvent("art-team")
+  void publishSseEvent("user", updated.userId)
 
   return NextResponse.json({
     ...updated,

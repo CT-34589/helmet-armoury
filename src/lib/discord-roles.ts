@@ -28,9 +28,15 @@ export async function fetchGuildMember(
     )
     if (!res.ok) return { roles: [], nick: null }
     const member = await res.json()
+    // Prefer server nickname → global display name → username (legacy fallback)
+    const displayName =
+      member.nick ??
+      member.user?.global_name ??
+      member.user?.username ??
+      null
     return {
       roles: Array.isArray(member.roles) ? member.roles : [],
-      nick: member.nick ?? null,
+      nick: displayName,
     }
   } catch {
     return { roles: [], nick: null }

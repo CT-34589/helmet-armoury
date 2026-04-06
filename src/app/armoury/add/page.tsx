@@ -3,7 +3,6 @@ import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { DirectAddForm } from "./direct-add-form"
 import { Card, CardContent } from "@/components/ui/card"
-import { getActiveConfigItems, getHelmetCategories } from "@/lib/cached-queries"
 
 export default async function DirectAddPage() {
   const session = await auth()
@@ -19,8 +18,8 @@ export default async function DirectAddPage() {
       select: { id: true, name: true, image: true },
       orderBy: { name: "asc" },
     }),
-    getActiveConfigItems(),
-    getHelmetCategories(),
+    prisma.configItem.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { label: "asc" }] }),
+    prisma.helmetCategory.findMany({ orderBy: { sortOrder: "asc" } }),
   ])
 
   const helmetTypes = configItems

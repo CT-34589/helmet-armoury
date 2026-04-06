@@ -12,7 +12,7 @@ export default async function AllArmouryPage({ searchParams }: Props) {
   if (!session?.user?.isArtTeam) redirect("/armoury/me")
   const { q, status, page } = await searchParams
   const pageNum = Math.max(1, Number(page) || 1)
-  const pageSize = 50
+  const pageSize = 20
 
   const where = {
     ...(status ? { status } : {}),

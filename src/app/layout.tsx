@@ -5,6 +5,7 @@ import { AppSidebar } from "@/components/app-sidebar"
 import { AppShell } from "@/components/app-shell"
 import { SidebarProvider } from "@/components/sidebar-context"
 import { Toaster } from "@/components/ui/sonner"
+import { ServiceWorkerRegistrar } from "@/components/service-worker-registrar"
 import { Inter } from "next/font/google";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +14,12 @@ const inter = Inter({subsets:['latin'],variable:'--font-sans'});
 export const metadata: Metadata = {
   title: "104th Art Team — Helmet Armoury",
   description: "Request and manage custom helmets for the 104th Battalion",
-  icons: { icon: "/logo.png" },
+  manifest: "/manifest.json",
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
 }
 
 export const viewport: Viewport = {
@@ -50,6 +56,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <main>{children}</main>
         )}
         <Toaster position="top-right" richColors closeButton />
+        <ServiceWorkerRegistrar />
       </body>
     </html>
   )

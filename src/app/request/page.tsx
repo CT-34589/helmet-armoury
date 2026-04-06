@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { getActiveConfigItems, getArtTeamMembers, getHelmetCategories } from "@/lib/cached-queries"
+import { getArtTeamMembers } from "@/lib/cached-queries"
 import { checkUserCooldown } from "@/lib/cooldown"
 import { RequestForm } from "./request-form"
 import { Card, CardContent } from "@/components/ui/card"
@@ -126,9 +126,12 @@ export default async function RequestPage() {
   }
 
   const [configItems, artTeamMembers, helmetCategories] = await Promise.all([
-    getActiveConfigItems(),
+    prisma.configItem.findMany({
+      where: { active: true },
+      orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
+    }),
     getArtTeamMembers(),
-    getHelmetCategories(),
+    prisma.helmetCategory.findMany({ orderBy: { sortOrder: "asc" } }),
   ])
 
   // Build clearance map for helmet categories

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { checkRateLimit, recordRateLimit } from "@/lib/rate-limit"
 import { checkUserCooldown } from "@/lib/cooldown"
 import { getItemLabelMap, resolveLabels } from "@/lib/label-lookup"
+import { publishSseEvent } from "@/lib/sse-bus"
 import { z } from "zod"
 
 export async function GET() {
@@ -168,5 +169,6 @@ export async function POST(req: Request) {
   })
 
   await recordRateLimit(session.user.id, "request:submit")
+  void publishSseEvent("art-team")
   return NextResponse.json(request, { status: 201 })
 }

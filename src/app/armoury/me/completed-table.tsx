@@ -14,7 +14,9 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { StatusBadge } from "@/components/status-tracker"
 import { formatDate } from "@/lib/utils"
-import { Download, ExternalLink } from "lucide-react"
+import { Download, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react"
+
+const PAGE_SIZE = 20
 
 interface CompletedRequest {
   id: string
@@ -33,6 +35,11 @@ interface CompletedRequest {
 
 export function CompletedTable({ requests }: { requests: CompletedRequest[] }) {
   const [selected, setSelected] = useState<CompletedRequest | null>(null)
+  const [page, setPage] = useState(1)
+
+  const totalPages = Math.ceil(requests.length / PAGE_SIZE)
+  const clampedPage = Math.min(page, Math.max(1, totalPages))
+  const pageRows = requests.slice((clampedPage - 1) * PAGE_SIZE, clampedPage * PAGE_SIZE)
 
   return (
     <>
@@ -46,7 +53,7 @@ export function CompletedTable({ requests }: { requests: CompletedRequest[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {requests.map((r) => (
+            {pageRows.map((r) => (
               <TableRow
                 key={r.id}
                 className="cursor-pointer"
@@ -60,6 +67,19 @@ export function CompletedTable({ requests }: { requests: CompletedRequest[] }) {
           </TableBody>
         </Table>
       </div>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-2">
+          <p className="text-xs text-muted-foreground">Page {clampedPage} of {totalPages}</p>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="icon" className="h-7 w-7" disabled={clampedPage <= 1} onClick={() => setPage(clampedPage - 1)}>
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="outline" size="icon" className="h-7 w-7" disabled={clampedPage >= totalPages} onClick={() => setPage(clampedPage + 1)}>
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
         <SheetContent className="w-full sm:max-w-md flex flex-col p-0 gap-0">

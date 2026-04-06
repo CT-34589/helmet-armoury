@@ -3,6 +3,7 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { PushToggle } from "@/components/push-toggle"
 import { Card, CardContent } from "@/components/ui/card"
 import { StatusBadge, StatusTracker } from "@/components/status-tracker"
 import { formatDate } from "@/lib/utils"
@@ -60,11 +61,14 @@ export function ArmouryLive({ initialActive, initialCompleted, initialDeclined, 
             {completed.length} helmet{completed.length !== 1 ? "s" : ""} completed
           </p>
         </div>
-        {!isBlacklisted && (
-          <Button asChild size="sm">
-            <Link href="/request"><Plus className="h-4 w-4" />New Request</Link>
-          </Button>
-        )}
+        <div className="flex items-center gap-1">
+          <PushToggle />
+          {!isBlacklisted && (
+            <Button asChild size="sm">
+              <Link href="/request"><Plus className="h-4 w-4" />New Request</Link>
+            </Button>
+          )}
+        </div>
       </div>
 
       {isBlacklisted && (
@@ -112,7 +116,7 @@ export function ArmouryLive({ initialActive, initialCompleted, initialDeclined, 
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Completed — {completed.length}
           </h2>
-          <CompletedTable requests={completed} />
+          <CompletedTable key={completed.length} requests={completed} />
         </div>
       )}
 

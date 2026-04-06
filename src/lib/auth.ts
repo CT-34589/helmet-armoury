@@ -57,15 +57,28 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               : 0
             if (helmetCount === 0) return "/unauthorized?reason=inactive"
             // Has records — allow sign-in as armoury-only
-            await prisma.user.update({
-              where: { id: user.id! },
-              data: { armouryOnly: true },
-            })
+            if (existingUser) {
+              await prisma.user.update({
+                where: { id: existingUser.id },
+                data: { armouryOnly: true },
+              })
+            }
             return true
           }
         }
 
-        // Resolve clearances — check which clearances list this user's ID as a member
+        // Resolve the real DB user ID — on first sign-in with NextAuth v5 beta,
+        // user.id may be the provider's ID (Discord snowflake) rather than the
+        // DB CUID, causing the update to silently miss.
+        // Email is the most reliable key: the adapter always writes the User row
+        // (with email) before the signIn callback fires, and email is unique.
+        // The Account row may not be linked yet at this point, so avoid that lookup.
+        const userByEmail = user.email
+          ? await prisma.user.findFirst({ where: { email: user.email }, select: { id: true } })
+          : null
+        const dbUserId = userByEmail?.id ?? user.id!
+
+        // Resolve clearances — check which clearances list this user's DB ID as a member
         let userClearances: string[] = []
         if (isArtTeamInDb) {
           try {
@@ -73,14 +86,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             userClearances = clearanceDefs
               .filter((c) => {
                 const ids = JSON.parse(c.memberIds) as string[]
-                return ids.includes(user.id!)
+                return ids.includes(dbUserId)
               })
               .map((c) => c.name)
           } catch { /* table may not exist yet */ }
         }
 
+        console.log(`[auth] signIn: providerAccountId=${account.providerAccountId} user.id=${user.id} dbUserId=${dbUserId}`)
+
         await prisma.user.update({
-          where: { id: user.id! },
+          where: { id: dbUserId },
           data: {
             discordId: account.providerAccountId,
             discordName: user.name,
@@ -93,6 +108,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             armouryOnly: false, // reset — they're an active member
           },
         })
+
+        console.log(`[auth] signIn: roles written OK for dbUserId=${dbUserId} roles=${roleData?.discordRoles?.length ?? 0}`)
       } catch (err) {
         console.error("[auth] signIn error:", err)
       }

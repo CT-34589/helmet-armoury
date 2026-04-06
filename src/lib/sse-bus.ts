@@ -5,10 +5,15 @@
  * Art team stream:  2 lightweight queries per tick (findFirst + count)
  * User streams:     1 groupBy query per tick covering ALL connected users,
  *                   then full fetch only for users whose data actually changed
+ *
+ * Redis pub/sub propagates change events instantly across all PM2 workers so
+ * clients see updates immediately rather than waiting for the next poll tick.
+ * Falls back to polling-only if REDIS_URL is not set.
  */
 
 import { prisma } from "./prisma"
 import { getItemLabelMap, resolveLabels } from "./label-lookup"
+import { redisPub, redisSub } from "./redis"
 
 type Sender = (data: unknown) => void
 
@@ -49,7 +54,7 @@ const userLastTs = new Map<string, string>()
 export async function fetchUserData(userId: string) {
   const labelMap = await getItemLabelMap()
   const rows = await prisma.request.findMany({
-    where: { userId, direct: false },
+    where: { userId },
     include: { artist: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
   })
@@ -95,7 +100,70 @@ export async function fetchUserData(userId: string) {
   return { active, completed, declined }
 }
 
-// ─── Shared tick ───────────────────────────────────────────────────────────
+// ─── Immediate push helpers (called by Redis subscriber + tick) ────────────
+
+async function pushArtTeam() {
+  if (artTeamSenders.size === 0) return
+  try {
+    const data = await fetchActiveRequests()
+    artTeamSenders.forEach((s) => s(data))
+  } catch { /* transient DB error */ }
+}
+
+async function pushUser(userId: string) {
+  if (!userSenders.has(userId)) return
+  try {
+    const data = await fetchUserData(userId)
+    userSenders.get(userId)?.forEach((s) => s(data))
+    // Update last-seen timestamp so the poll skips this user on the next tick
+    const latest = await prisma.request.findFirst({
+      where: { userId },
+      orderBy: { updatedAt: "desc" },
+      select: { updatedAt: true },
+    })
+    if (latest) userLastTs.set(userId, latest.updatedAt.toISOString())
+  } catch { /* transient DB error */ }
+}
+
+// ─── Redis pub/sub ─────────────────────────────────────────────────────────
+
+let redisInitialised = false
+
+function initRedis() {
+  if (redisInitialised || !redisSub) return
+  redisInitialised = true
+
+  redisSub.subscribe("sse:art-team").catch(() => {})
+  redisSub.psubscribe("sse:user:*").catch(() => {})
+
+  redisSub.on("message", (_channel: string, _message: string) => {
+    void pushArtTeam()
+  })
+
+  redisSub.on("pmessage", (_pattern: string, channel: string, _message: string) => {
+    const userId = channel.slice("sse:user:".length)
+    void pushUser(userId)
+  })
+}
+
+/**
+ * Publish a change event so all workers push to their SSE clients immediately.
+ * Call this from API routes after any mutation that affects the SSE streams.
+ *
+ * publishSseEvent("art-team")          — request board changed
+ * publishSseEvent("user", userId)      — specific user's data changed
+ */
+export async function publishSseEvent(type: "art-team"): Promise<void>
+export async function publishSseEvent(type: "user", userId: string): Promise<void>
+export async function publishSseEvent(type: "art-team" | "user", userId?: string): Promise<void> {
+  if (!redisPub) return
+  const channel = type === "art-team" ? "sse:art-team" : `sse:user:${userId}`
+  try {
+    await redisPub.publish(channel, "1")
+  } catch { /* Redis unavailable — clients will catch up on next poll */ }
+}
+
+// ─── Shared polling tick (fallback + catch-all) ────────────────────────────
 
 async function tick() {
   // Art team check — 2 queries total regardless of subscriber count
@@ -125,7 +193,7 @@ async function tick() {
       const userIds = [...userSenders.keys()]
       const grouped = await prisma.request.groupBy({
         by: ["userId"],
-        where: { userId: { in: userIds }, direct: false },
+        where: { userId: { in: userIds } },
         _max: { updatedAt: true },
       })
 
@@ -146,8 +214,9 @@ async function tick() {
 let interval: ReturnType<typeof setInterval> | null = null
 
 function ensureRunning() {
+  initRedis()
   if (interval) return
-  interval = setInterval(tick, 2000)
+  interval = setInterval(tick, 5000)
 }
 
 function maybeStop() {
