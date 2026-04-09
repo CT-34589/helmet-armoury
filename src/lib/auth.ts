@@ -70,13 +70,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Resolve the real DB user ID — on first sign-in with NextAuth v5 beta,
         // user.id may be the provider's ID (Discord snowflake) rather than the
         // DB CUID, causing the update to silently miss.
-        // Email is the most reliable key: the adapter always writes the User row
-        // (with email) before the signIn callback fires, and email is unique.
-        // The Account row may not be linked yet at this point, so avoid that lookup.
+        // Try email first (adapter writes User row before signIn fires, email is unique).
+        // Fall back to discordId lookup for returning users whose email may be null or changed.
         const userByEmail = user.email
           ? await prisma.user.findFirst({ where: { email: user.email }, select: { id: true } })
           : null
-        const dbUserId = userByEmail?.id ?? user.id!
+        const userByDiscordId = !userByEmail && account.providerAccountId
+          ? await prisma.user.findFirst({ where: { discordId: account.providerAccountId }, select: { id: true } })
+          : null
+        const dbUserId = userByEmail?.id ?? userByDiscordId?.id ?? user.id!
 
         // Resolve clearances — check which clearances list this user's DB ID as a member
         let userClearances: string[] = []
@@ -94,7 +96,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         console.log(`[auth] signIn: providerAccountId=${account.providerAccountId} user.id=${user.id} dbUserId=${dbUserId}`)
 
-        await prisma.user.update({
+        const updateResult = await prisma.user.updateMany({
           where: { id: dbUserId },
           data: {
             discordId: account.providerAccountId,
@@ -108,6 +110,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             armouryOnly: false, // reset — they're an active member
           },
         })
+        if (updateResult.count === 0) {
+          console.error(`[auth] signIn: update wrote 0 rows for dbUserId=${dbUserId} — user record missing`)
+        }
 
         console.log(`[auth] signIn: roles written OK for dbUserId=${dbUserId} roles=${roleData?.discordRoles?.length ?? 0}`)
       } catch (err) {
@@ -118,7 +123,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
     async session({ session, user }) {
       try {
-        const dbUser = await prisma.user.findUnique({
+        let dbUser = await prisma.user.findUnique({
           where: { id: user.id },
           select: {
             isArtTeam: true,
@@ -131,6 +136,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             clearances: true,
           },
         })
+
+        // NextAuth v5 beta: on the very first sign-in, user.id in the session
+        // callback may be the Discord snowflake rather than the DB CUID, causing
+        // the lookup above to return null. Fall back to email lookup.
+        if (!dbUser && session.user.email) {
+          dbUser = await prisma.user.findFirst({
+            where: { email: session.user.email },
+            select: {
+              isArtTeam: true,
+              artTeamTier: true,
+              isBlacklisted: true,
+              armouryOnly: true,
+              discordId: true,
+              discordRoles: true,
+              kmcRoles: true,
+              clearances: true,
+            },
+          })
+        }
 
         // Re-check blacklist on every session load — forces immediate effect
         if (dbUser?.isBlacklisted) {

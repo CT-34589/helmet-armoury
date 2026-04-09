@@ -40,3 +40,6 @@ next-env.d.ts
 /prisma/dev.db-shm
 /prisma/dev.db-wal
 
+
+# Sentry Config File
+.env.sentry-build-plugin

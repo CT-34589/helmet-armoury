@@ -4,11 +4,10 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model Account {
-  id                String  @id @default(cuid())
+  id                String  @id @default(cuid(2))
   userId            String
   type              String
   provider          String
@@ -25,7 +24,7 @@ model Account {
 }
 
 model Session {
-  id           String   @id @default(cuid())
+  id           String   @id @default(cuid(2))
   sessionToken String   @unique
   userId       String
   expires      DateTime
@@ -33,7 +32,7 @@ model Session {
 }
 
 model User {
-  id               String    @id @default(cuid())
+  id               String    @id @default(cuid(2))
   name             String?
   email            String?   @unique
   emailVerified    DateTime?
@@ -63,7 +62,7 @@ model User {
 }
 
 model Request {
-  id                String   @id @default(cuid())
+  id                String   @id @default(cuid(2))
   userId            String
   user              User     @relation(fields: [userId], references: [id])
   helmetType        String
@@ -98,7 +97,7 @@ model Request {
 }
 
 model ConfigItem {
-  id              String   @id @default(cuid())
+  id              String   @id @default(cuid(2))
   category        String
   subCategory     String?
   helmetCategory  String?
@@ -117,7 +116,7 @@ model ConfigItem {
 }
 
 model HelmetCategory {
-  id        String   @id @default(cuid())
+  id        String   @id @default(cuid(2))
   name      String   @unique
   sortOrder Int      @default(0)
   clearance String?  // clearance name required to access this category e.g. "sf"
@@ -125,7 +124,7 @@ model HelmetCategory {
 }
 
 model ArtTeamClearance {
-  id             String   @id @default(cuid())
+  id             String   @id @default(cuid(2))
   name           String   @unique  // e.g. "sf"
   label          String            // e.g. "Special Forces"
   description    String?
@@ -141,7 +140,7 @@ model SystemSetting {
 }
 
 model RateLimit {
-  id        String   @id @default(cuid())
+  id        String   @id @default(cuid(2))
   userId    String
   action    String
   createdAt DateTime @default(now())
@@ -149,7 +148,7 @@ model RateLimit {
 }
 
 model PushSubscription {
-  id        String   @id @default(cuid())
+  id        String   @id @default(cuid(2))
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   endpoint  String   @unique

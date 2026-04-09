@@ -23,7 +23,7 @@ export async function GET() {
     getItemLabelMap(),
   ])
 
-  return NextResponse.json(requests.map((r) => ({
+  return NextResponse.json(requests.map((r: (typeof requests)[number]) => ({
     ...r,
     decals: resolveLabels(JSON.parse(r.decals) as string[], labelMap),
     designs: resolveLabels(JSON.parse(r.designs) as string[], labelMap),
@@ -114,11 +114,11 @@ export async function POST(req: Request) {
   if (!session.user.isArtTeam) {
     const slotIds = (key: string) => (settingsMap[key] ?? "").split(",").map((s) => s.trim()).filter(Boolean)
     const kmcRoles = session.user.discordRoles ?? []
-    const sgmPlusIds = slotIds("cooldown_rank_sgm_plus_role_ids").length > 0
-      ? slotIds("cooldown_rank_sgm_plus_role_ids")
-      : (process.env.KMC_SGM_PLUS_ROLE_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean)
+    const sgmPlusIds = slotIds("cooldown_rank_sgm_plus_role_ids")
 
-    if (!sgmPlusIds.some((id) => kmcRoles.includes(id))) {
+    // Only enforce slot limits when SGM+ bypass IDs are configured — if the
+    // setting is empty there's no way to correctly exempt high-rank members.
+    if (sgmPlusIds.length > 0 && !sgmPlusIds.some((id) => kmcRoles.includes(id))) {
       let tier = "ct_po"
       if (slotIds("slot_rank_sgt_fcpt_role_ids").some((id) => kmcRoles.includes(id)))     tier = "sgt_fcpt"
       else if (slotIds("slot_rank_cpl_flt_role_ids").some((id) => kmcRoles.includes(id))) tier = "cpl_flt"
@@ -130,7 +130,7 @@ export async function POST(req: Request) {
       if (decalLimit > 0 || designLimit > 0) {
         // Fetch slot weights for submitted items
         const allNames = [...d.decals, ...d.designs]
-        const configItems = allNames.length > 0
+        const configItems: { name: string; slotWeight: number | null }[] = allNames.length > 0
           ? await prisma.configItem.findMany({ where: { name: { in: allNames } }, select: { name: true, slotWeight: true } })
           : []
         const weightMap = new Map(configItems.map((c) => [c.name, c.slotWeight ?? 1]))

@@ -29,39 +29,20 @@ export async function processAndSaveHelmetImage(
   const originalSize = buffer.byteLength
   const id = randomUUID()
 
-  const meta = await sharp(buffer).metadata()
-  const inputFormat = meta.format ?? "jpeg"
+  // Convert everything to lossy WebP — preserves alpha, ~50-80% smaller than PNG,
+  // ~25-35% smaller than JPEG, supported by all modern browsers.
+  // Cap the longest dimension at 2048px — helmet renders don't benefit from larger at web sizes.
+  const MAX_DIMENSION = 2048
 
-  let processed: Buffer
-  let ext: string
-  let width: number
-  let height: number
+  const result = await sharp(buffer)
+    .resize(MAX_DIMENSION, MAX_DIMENSION, { fit: "inside", withoutEnlargement: true })
+    .webp({ quality: 90, effort: 6 })
+    .toBuffer({ resolveWithObject: true })
 
-  if (inputFormat === "png") {
-    const result = await sharp(buffer)
-      .png({ compressionLevel: 9, adaptiveFiltering: true, palette: false })
-      .toBuffer({ resolveWithObject: true })
-    processed = result.data
-    ext = "png"
-    width = result.info.width
-    height = result.info.height
-  } else if (inputFormat === "webp") {
-    const result = await sharp(buffer)
-      .webp({ lossless: true, effort: 6 })
-      .toBuffer({ resolveWithObject: true })
-    processed = result.data
-    ext = "webp"
-    width = result.info.width
-    height = result.info.height
-  } else {
-    const result = await sharp(buffer)
-      .jpeg({ quality: 95, mozjpeg: true, progressive: true })
-      .toBuffer({ resolveWithObject: true })
-    processed = result.data
-    ext = "jpg"
-    width = result.info.width
-    height = result.info.height
-  }
+  const processed = result.data
+  const ext = "webp"
+  const width = result.info.width
+  const height = result.info.height
 
   const filename = `${id}.${ext}`
   await writeFile(join(UPLOAD_DIR, filename), processed)
