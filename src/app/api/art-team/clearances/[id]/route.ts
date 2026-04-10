@@ -8,7 +8,7 @@ const SAT_ADMIN = ["head", "senior"]
 const schema = z.object({
   label: z.string().min(1).max(100).optional(),
   description: z.string().max(500).nullable().optional(),
-  memberIds: z.array(z.string().cuid()).optional(),
+  memberIds: z.array(z.string().min(1)).optional(),
 })
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
